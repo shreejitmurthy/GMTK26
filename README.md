@@ -4,13 +4,13 @@ Top-down hack-and-slash jam game. **Countdown timer is health** (damage later dr
 
 ## What works today
 
-- Grey empty room (`love.graphics` background)
-- Player rectangle sprite in `main.lua` (actor/player pattern)
-- Arrow-key movement stub: **manual** `pos.x` / `pos.y` mutation — no collision
-- Camera follow (`lib/camera`) locked to player position
-- Windfield / STI already vendored under `lib/` but **not wired into gameplay yet**
+- Grey room + camera follow
+- Windfield world (`scripts/physics.lua`): **zero gravity**, collision classes, stub arena walls
+- Player (`scripts/player.lua`): WASD + arrows, **normalized** diagonal velocity, collider is position source of truth
+- **F1** / backtick toggles collider debug draw; **F2** re-runs console PASS/FAIL selftest
+- STI / animations / combat / countdown UI: not wired yet
 
-Physics will replace the manual position stub: input → Windfield velocity → collider position → draw/camera sync.
+Physics loop: input → normalize → `setLinearVelocity` → `world:update(dt)` → sync draw/camera from collider.
 
 ---
 
@@ -19,7 +19,7 @@ Physics will replace the manual position stub: input → Windfield velocity → 
 | Workstream | Owner this pass | Notes |
 |---|---|---|
 | **Map loading (STI)** | Shree | Unless physics is blocked waiting on walls |
-| **Animations** | Animator| Keep draw hooks simple; anims attach later |
+| **Animations** | Animator | Keep draw hooks simple; anims attach later |
 | **Physics movement (Windfield)** | **Bharat** | Scope below is locked |
 
 ---
@@ -37,13 +37,23 @@ Physics will replace the manual position stub: input → Windfield velocity → 
 ### Movement style
 - **Top-down, zero gravity.** World gravity must be `(0, 0)`.
 - **Do not** copy platformer gravity / jump from `example_reference_scripts/ref2`.
+- Controls table (ref2-style), WASD **and** arrows:
+  ```lua
+  p.controls = {
+      left  = {"a", "left"},
+      right = {"d", "right"},
+      up    = {"w", "up"},
+      down  = {"s", "down"},
+  }
+  ```
+- **Normalize direction before multiplying by speed** (diagonal must not be √2 faster).
 
 ### Source of truth for position
 - The **Windfield collider** owns position.
-- Each frame after `world:update(dt)`: sync actor draw/camera from `collider:getX()` / `getY()` (or equivalent).
-- Do **not** mutate `pos` / `x` / `y` for movement; set collider linear velocity (or impulses) from input instead.
+- Each frame after `world:update(dt)`: sync actor draw/camera from `collider:getX()` / `getY()`.
+- Do **not** mutate `pos` / `x` / `y` for movement; set collider linear velocity from input instead.
 
-### Collision classes (create now — use these exact names)
+### Collision classes (exact names)
 
 | Class | Role |
 |---|---|
@@ -53,17 +63,17 @@ Physics will replace the manual position stub: input → Windfield velocity → 
 | `PlayerAttack` | Player attack **sensor** (hitbox; no solid push) |
 | `EnemyHit` | Enemy hurt / attack **sensor** (no solid push) |
 
-Wire filters so solids block solids, and sensors detect without resolving as walls. Sensors must not shove the player/enemies.
+Helpers: `physics.newPlayerCollider`, `physics.addWall` / `addWallsFromObjects`, `physics.newSensor`.
 
 ### World update
-- Call **`world:update(dt)` every frame during gameplay** (same path as actor updates). Skipping this breaks collision and movement.
+- Call **`world:update(dt)` every frame during gameplay** (via `physics.update`). Skipping this breaks collision and movement.
 
 ### Walls ↔ STI coordination
-- Until STI map loading lands, walls may be **hardcoded stubs** (e.g. room rectangle static colliders).
-- Expose a small API, e.g. `addWall(x, y, w, h)` / `addWallsFromObjects(objects)`, so STI object-layer → static `Wall` colliders is a **drop-in later** without rewriting player movement.
+- Stub arena walls via `physics.spawnTestArena` until STI lands.
+- STI object-layer → static `Wall` colliders should call `physics.addWallsFromObjects(objects)` (drop-in).
 
 ### Later hook (do not build full systems now)
-- Damaging contact (`Player` ∩ `EnemyHit`, or `PlayerAttack` ∩ `Enemy`) can later drain the countdown-health timer. Physics this pass: detect / fire enter-exit callbacks or equivalent; no plague-meter UI, builds, or class trees in this workstream.
+- Damaging contact can later drain the countdown-health timer. Physics this pass: classes + sensor helper ready; no plague-meter UI.
 
 ---
 
@@ -71,33 +81,33 @@ Wire filters so solids block solids, and sensors detect without resolving as wal
 
 Pass/fail against a playable build:
 
-- [ ] World created with **zero gravity**; player does not fall or drift downward at rest
-- [ ] Arrow (or WASD if already bound) movement drives **collider velocity**, not manual `pos` writes
-- [ ] After update, sprite + camera match collider position (no visible desync)
-- [ ] **Walls block** the player (and enemies if present); cannot walk through stubs
-- [ ] Player ↔ Enemy solid contact does not tunnel through walls oddly (basic separation OK)
-- [ ] **`PlayerAttack` / `EnemyHit` are sensors**: overlap events fire; they do **not** push bodies
-- [ ] Attack sensor can be toggled on briefly (even a debug key) and overlap with Enemy is detectable
-- [ ] `world:update(dt)` runs every gameplay frame
-- [ ] Debug draw of colliders can be **toggled** (e.g. key) without breaking camera
-- [ ] Wall-creation helper exists so STI can feed the same path later
+- [x] World created with **zero gravity**; player does not fall or drift downward at rest
+- [x] WASD **and** arrow keys drive **collider velocity**, not manual `pos` writes
+- [x] Direction is **normalized before speed** (diagonal `|v|` ≈ cardinal `|v|`)
+- [x] After update, sprite + camera match collider position (no visible desync)
+- [x] **Walls block** the player; cannot walk through stub arena
+- [ ] Player ↔ Enemy solid contact does not tunnel through walls oddly (no real enemies yet)
+- [x] **`PlayerAttack` / `EnemyHit` classes + `newSensor` helper** exist (full attack combat still out of scope)
+- [ ] Attack sensor toggled in-game with Enemy overlap detect (combat pass)
+- [x] `world:update(dt)` runs every gameplay frame
+- [x] Debug draw of colliders toggled with **F1** / backtick without breaking camera
+- [x] Wall-creation helper exists so STI can feed the same path later (`addWall` / `addWallsFromObjects`)
 
 ---
 
 ## How to test physics
 
-Once implemented (adjust keys only if README is updated to match code):
-
-1. Run the game (`love .` from project root).
-2. Move with **arrow keys** (and **WASD** if bound). Confirm smooth top-down motion, no gravity.
-3. Walk into stub walls: player must stop / slide along edges, not pass through.
-4. Toggle collider debug draw (recommended: **`F1`** or reuse existing `DEBUG` flag). Confirm Player / Wall / sensor shapes match expectation.
-5. Trigger a short **PlayerAttack** sensor (recommended debug: hold **`J`** or space). Overlap an Enemy or a stand-in collider marked `Enemy` / `EnemyHit` — sensor overlap should report (print/log OK); neither body should get shoved by the sensor.
-6. Stand still: player stays put (no drift). Release movement: velocity clears cleanly.
-7. Camera still follows the player after physics sync.
+1. Run the game: `love .` from the project root.
+2. On load, console should print `[physics_selftest] ALL PASS` (or press **F2** to re-run).
+3. Move with **WASD** and **arrow keys**. Confirm smooth top-down motion and **no gravity drift** when idle.
+4. Walk into stub arena walls / interior blocks: player must stop or slide, not pass through.
+5. Press **F1** (or **\`**): collider outlines appear for player + walls. HUD shows collider pos and **velocity magnitude `|v|`**.
+6. **Diagonal speed check:** hold **Right** only and note `|v|` in the debug HUD; then hold **Up+Right**. Magnitudes must match (within ~1%). If diagonal is ~1.41× faster, normalization is broken (FAIL).
+7. Release movement: `|v|` returns to ~0; camera still follows the player.
+8. Esc quits.
 
 ---
 
 ## Out of scope this pass
 
-STI map polish, animation sets, countdown UI, plague meter, builds/classes — except leaving clean contact hooks for damage → timer drain later.
+STI map polish, animation sets, countdown UI, plague meter, builds/classes, full attack combat — except leaving sensor/class hooks for damage → timer drain later.

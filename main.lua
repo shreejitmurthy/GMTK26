@@ -2,10 +2,12 @@ love.profiler = require "lib.profile"
 require "scripts.dbg"
 
 require "lib.spritesheet"
-wf = require "lib.windfield"
 camera = require "lib.camera"
 
 require "scripts.actor"
+local physics = require "scripts.physics"
+require "scripts.player"
+local physics_selftest = require "scripts.physics_selftest"
 
 local zoom = 2
 ZOOM_MULT = 0.1
@@ -33,7 +35,7 @@ function state:init(...)
     self.canvas = love.graphics.newCanvas()
     local args = { ... }
     for _, actor in ipairs(args) do
-        self.actors[#self.actors+1] = actor
+        self.actors[#self.actors + 1] = actor
     end
 end
 
@@ -46,10 +48,23 @@ function state:getActor(label)
     return nil
 end
 
+-- Frame order during gameplay:
+--   1) actors setLinearVelocity from input (no manual pos writes)
+--   2) physics.world:update(dt)
+--   3) actors sync visual pos from collider:getX/Y
+--   4) camera follows synced player pos
 function state:update(dt)
     if state.gameState == GAME_STATE.GAMEPLAY then
         for _, actor in ipairs(self.actors) do
             actor:update(dt)
+        end
+
+        physics.update(dt)
+
+        for _, actor in ipairs(self.actors) do
+            if actor.syncFromCollider then
+                actor:syncFromCollider()
+            end
         end
 
         local playerActor = self:getActor("player")
@@ -65,76 +80,58 @@ function state:drawActors()
     end
 end
 
-function state:drawPlayerPosition()
+function state:drawHud()
     local playerActor = self:getActor("player")
-    if playerActor then
-        love.graphics.setColor(1, 1, 1, 1)
+    if not playerActor then
+        return
+    end
+
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(
+        string.format("Player position: %.1f, %.1f", playerActor.pos.x, playerActor.pos.y),
+        10,
+        10
+    )
+    love.graphics.print("Move: WASD / Arrows | F1: physics debug | F2: selftest | Esc: quit", 10, 28)
+
+    if physics.debug then
+        local vx, vy = playerActor:getVelocity()
+        local speed = playerActor:getSpeed()
         love.graphics.print(
-            string.format("Player position: %.1f, %.1f", playerActor.pos.x, playerActor.pos.y),
+            string.format(
+                "DEBUG physics | collider: %.1f, %.1f | vel: %.1f, %.1f | |v|: %.2f",
+                playerActor.collider:getX(),
+                playerActor.collider:getY(),
+                vx,
+                vy,
+                speed
+            ),
             10,
-            10
+            46
+        )
+        love.graphics.print(
+            "Compare |v| while holding Right vs Up+Right — magnitudes should match.",
+            10,
+            64
         )
     end
 end
 
--- function state:drawPauseMenu()
---     love.graphics.setColor(0, 0, 0, 0.5)
---     love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
-
---     love.graphics.setColor(1, 1, 1)
---     love.graphics.printf("Game Paused", 0, love.graphics.getHeight() / 2, love.graphics.getWidth(), "center")
--- end
-
--- PLAYER
-
-player = {}
-setmetatable(player, {__index = actor})
-
-function player:new(x, y)
-    local k = actor.new(self, 350, 200, "player")
-    setmetatable(k, {__index = player})
-    -- Basic rectangle player asset. Can implement animations pre easily.
-    k.img = love.graphics.newImage("res/images/player.png")
-    k.pos = {x = x or 100, y = y or 100}
-    k.x = k.pos.x
-    k.y = k.pos.y
-    k.speed = 50
-    return k
-end
-
-function player:update(dt)
-    -- self.rot = self.rot + math.rad(90) * dt
-
-    if love.keyboard.isDown("left") then
-        self.pos.x = self.pos.x - self.speed * dt
-    elseif love.keyboard.isDown("right") then
-        self.pos.x = self.pos.x + self.speed * dt
-    end
-
-    if love.keyboard.isDown("up") then
-        self.pos.y = self.pos.y - self.speed * dt
-    elseif love.keyboard.isDown("down") then
-        self.pos.y = self.pos.y + self.speed * dt
-    end
-
-    self.x = self.pos.x
-    self.y = self.pos.y
-end
-
-function player:draw()
-    love.graphics.draw(self.img, self.pos.x, self.pos.y, 0, 1, 1, self.img:getWidth() / 2, self.img:getHeight() / 2)
-end
-
 function love.load()
-    local playerActor = player:new()
+    physics.init()
+
+    local spawnX, spawnY = 200, 150
+    physics.spawnTestArena(spawnX, spawnY)
+
+    local playerActor = player:new(spawnX, spawnY)
     cam = camera(playerActor.pos.x, playerActor.pos.y, zoom)
 
     -- Push actors we want in the scene.
-    -- This is currently initialising the player **when the game loads**. 
-    -- In the future, we want to do this when the scene (room) is loaded (loading enemies at the start of a scene)
-    state:init(
-        playerActor
-    )
+    -- Currently initialising the player when the game loads.
+    -- Later: spawn when the scene/room loads (enemies too).
+    state:init(playerActor)
+
+    physics_selftest.run(playerActor)
 end
 
 function love.update(dt)
@@ -146,13 +143,20 @@ function love.draw()
 
     cam:attach()
     state:drawActors()
+    physics.drawDebug()
     cam:detach()
 
-    state:drawPlayerPosition()
+    state:drawHud()
 end
 
 function love.keypressed(k)
     if k == "escape" then
         love.event.quit()
+    elseif k == "f1" or k == "`" then
+        local on = physics.toggleDebug()
+        DEBUG = on
+        print("[physics] debug draw: " .. (on and "ON" or "OFF"))
+    elseif k == "f2" then
+        physics_selftest.run(state:getActor("player"))
     end
 end
