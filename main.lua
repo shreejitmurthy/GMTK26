@@ -7,6 +7,7 @@ camera = require "lib.camera"
 require "scripts.actor"
 local physics = require "scripts.physics"
 require "scripts.player"
+require "scripts.enemy"
 local physics_selftest = require "scripts.physics_selftest"
 
 local zoom = 2
@@ -124,14 +125,18 @@ function love.load()
     physics.spawnTestArena(spawnX, spawnY)
 
     local playerActor = player:new(spawnX, spawnY)
+    -- Inside stub arena (center ~200,150); clear of interior wall blocks.
+    local enemies = {
+        enemy:new(120, 100),
+        enemy:new(280, 100),
+        enemy:new(120, 200),
+    }
     cam = camera(playerActor.pos.x, playerActor.pos.y, zoom)
 
-    -- Push actors we want in the scene.
-    -- Currently initialising the player when the game loads.
-    -- Later: spawn when the scene/room loads (enemies too).
-    state:init(playerActor)
+    -- Push actors we want in the scene (player + idle enemies).
+    state:init(playerActor, unpack(enemies))
 
-    physics_selftest.run(playerActor)
+    physics_selftest.run(playerActor, enemies)
 end
 
 function love.update(dt)
@@ -142,6 +147,7 @@ function love.draw()
     love.graphics.setBackgroundColor(0.5, 0.5, 0.5)
 
     cam:attach()
+    physics.drawWalls()
     state:drawActors()
     physics.drawDebug()
     cam:detach()
@@ -157,6 +163,12 @@ function love.keypressed(k)
         DEBUG = on
         print("[physics] debug draw: " .. (on and "ON" or "OFF"))
     elseif k == "f2" then
-        physics_selftest.run(state:getActor("player"))
+        local enemies = {}
+        for _, actor in ipairs(state.actors) do
+            if actor.label == "enemy" then
+                enemies[#enemies + 1] = actor
+            end
+        end
+        physics_selftest.run(state:getActor("player"), enemies)
     end
 end

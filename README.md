@@ -63,7 +63,7 @@ Physics loop: input → normalize → `setLinearVelocity` → `world:update(dt)`
 | `PlayerAttack` | Player attack **sensor** (hitbox; no solid push) |
 | `EnemyHit` | Enemy hurt / attack **sensor** (no solid push) |
 
-Helpers: `physics.newPlayerCollider`, `physics.addWall` / `addWallsFromObjects`, `physics.newSensor`.
+Helpers: `physics.newPlayerCollider`, `physics.newEnemyCollider`, `physics.addWall` / `addWallsFromObjects`, `physics.newSensor`.
 
 ### World update
 - Call **`world:update(dt)` every frame during gameplay** (via `physics.update`). Skipping this breaks collision and movement.
@@ -86,7 +86,7 @@ Pass/fail against a playable build:
 - [x] Direction is **normalized before speed** (diagonal `|v|` ≈ cardinal `|v|`)
 - [x] After update, sprite + camera match collider position (no visible desync)
 - [x] **Walls block** the player; cannot walk through stub arena
-- [ ] Player ↔ Enemy solid contact does not tunnel through walls oddly (no real enemies yet)
+- [x] Player ↔ Enemy solid contact (idle `Enemy` bodies in arena; walk into them — they block like walls)
 - [x] **`PlayerAttack` / `EnemyHit` classes + `newSensor` helper** exist (full attack combat still out of scope)
 - [ ] Attack sensor toggled in-game with Enemy overlap detect (combat pass)
 - [x] `world:update(dt)` runs every gameplay frame

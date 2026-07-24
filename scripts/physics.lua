@@ -78,11 +78,23 @@ function physics.newPlayerCollider(x, y, w, h, corner)
     return collider
 end
 
+--- Enemy body. x/y are top-left of the hitbox (Windfield BSG convention).
+--- Static so idle enemies block like walls (not shoved by the player).
+function physics.newEnemyCollider(x, y, w, h, corner)
+    local collider = physics.world:newBSGRectangleCollider(x, y, w, h, corner or 2)
+    collider:setFixedRotation(true)
+    collider:setCollisionClass("Enemy")
+    collider:setType("static")
+    return collider
+end
+
 --- Static wall rectangle. x/y are top-left. STI-ready drop-in.
 function physics.addWall(x, y, w, h)
     local wall = physics.world:newRectangleCollider(x, y, w, h)
     wall:setType("static")
     wall:setCollisionClass("Wall")
+    -- Keep top-left dims for visible stub draw (colliders alone are invisible).
+    wall.drawX, wall.drawY, wall.drawW, wall.drawH = x, y, w, h
     physics.walls[#physics.walls + 1] = wall
     return wall
 end
@@ -101,6 +113,17 @@ end
 
 function physics.getWallCount()
     return #physics.walls
+end
+
+--- Draw stub arena walls so solid blockers are visible without F1.
+function physics.drawWalls()
+    love.graphics.setColor(0.32, 0.32, 0.35, 1)
+    for _, wall in ipairs(physics.walls) do
+        if wall.drawW then
+            love.graphics.rectangle("fill", wall.drawX, wall.drawY, wall.drawW, wall.drawH)
+        end
+    end
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 --- Sensor hitbox (no solid push). x/y are top-left.

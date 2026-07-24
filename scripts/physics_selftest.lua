@@ -19,7 +19,7 @@ local function check(name, ok, detail)
     return ok
 end
 
-function selftest.run(playerActor)
+function selftest.run(playerActor, enemyActors)
     print("[physics_selftest] running...")
     local allOk = true
 
@@ -51,6 +51,21 @@ function selftest.run(playerActor)
             tostring(playerActor.collider.collision_class)) and allOk
     else
         allOk = check("player collider exists", false, "missing playerActor.collider") and allOk
+    end
+
+    enemyActors = enemyActors or {}
+    local sample = enemyActors[1]
+    if sample and sample.collider then
+        local cx, cy = sample.collider:getX(), sample.collider:getY()
+        allOk = check("enemy collider exists", true,
+            string.format("n=%d pos %.1f, %.1f", #enemyActors, cx, cy)) and allOk
+        allOk = check("enemy pos matches collider",
+            nearlyEqual(sample.pos.x, cx, 0.1) and nearlyEqual(sample.pos.y, cy, 0.1)) and allOk
+        allOk = check("enemy collision class",
+            sample.collider.collision_class == "Enemy",
+            tostring(sample.collider.collision_class)) and allOk
+    else
+        allOk = check("enemy collider exists", false, "missing enemyActors[1].collider") and allOk
     end
 
     -- Diagonal vs cardinal: normalize BEFORE speed (FAIL if √2 speedup).
