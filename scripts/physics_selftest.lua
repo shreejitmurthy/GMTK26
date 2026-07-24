@@ -68,6 +68,22 @@ function selftest.run(playerActor, enemyActors)
         allOk = check("enemy collider exists", false, "missing enemyActors[1].collider") and allOk
     end
 
+    if sample and sample.hurtbox then
+        local hx, hy = sample.hurtbox:getX(), sample.hurtbox:getY()
+        local cx, cy = sample.collider:getX(), sample.collider:getY()
+        allOk = check("enemy EnemyHit hurtbox exists",
+            sample.hurtbox.collision_class == "EnemyHit",
+            tostring(sample.hurtbox.collision_class)) and allOk
+        allOk = check("enemy hurtbox is sensor", sample.hurtbox:isSensor() == true) and allOk
+        allOk = check("enemy hurtbox pos matches collider",
+            nearlyEqual(hx, cx, 0.1) and nearlyEqual(hy, cy, 0.1),
+            string.format("hurtbox %.1f,%.1f body %.1f,%.1f", hx, hy, cx, cy)) and allOk
+        allOk = check("enemy hurtbox object is enemy",
+            sample.hurtbox:getObject() == sample) and allOk
+    else
+        allOk = check("enemy EnemyHit hurtbox exists", false, "missing enemyActors[1].hurtbox") and allOk
+    end
+
     -- Diagonal vs cardinal: normalize BEFORE speed (FAIL if √2 speedup).
     local speed = (playerActor and playerActor.speed) or 120
     local cvx, cvy = player.normalizedVelocity(1, 0, speed)

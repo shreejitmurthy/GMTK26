@@ -50,10 +50,11 @@ function state:getActor(label)
 end
 
 -- Frame order during gameplay:
---   1) actors setLinearVelocity from input (no manual pos writes)
+--   1) actors setLinearVelocity / sync sensors (no manual pos writes)
 --   2) physics.world:update(dt)
---   3) actors sync visual pos from collider:getX/Y
---   4) camera follows synced player pos
+--   3) poll PlayerAttack :enter("EnemyHit") hit logs
+--   4) actors sync visual pos from collider:getX/Y
+--   5) camera follows synced player pos
 function state:update(dt)
     if state.gameState == GAME_STATE.GAMEPLAY then
         for _, actor in ipairs(self.actors) do
@@ -62,13 +63,17 @@ function state:update(dt)
 
         physics.update(dt)
 
+        local playerActor = self:getActor("player")
+        if playerActor and playerActor.pollAttackHits then
+            playerActor:pollAttackHits()
+        end
+
         for _, actor in ipairs(self.actors) do
             if actor.syncFromCollider then
                 actor:syncFromCollider()
             end
         end
 
-        local playerActor = self:getActor("player")
         if playerActor and cam then
             cam:lookAt(playerActor.pos.x, playerActor.pos.y)
         end
@@ -93,7 +98,7 @@ function state:drawHud()
         10,
         10
     )
-    love.graphics.print("Move: WASD / Arrows | F1: physics debug | F2: selftest | Esc: quit", 10, 28)
+    love.graphics.print("Move: WASD / Arrows | Hold Space: attack sensor | F1: physics debug | F2: selftest | Esc: quit", 10, 28)
 
     if physics.debug then
         local vx, vy = playerActor:getVelocity()

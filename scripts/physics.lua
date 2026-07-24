@@ -26,12 +26,13 @@ function physics.init()
     physics.world:addCollisionClass("Enemy")
     physics.world:addCollisionClass("Wall")
     -- Sensors: detect overlaps but ignore solid resolve with most solids via setSensor.
-    -- Still register classes so enter/exit queries work consistently.
-    physics.world:addCollisionClass("PlayerAttack", {
-        ignores = { "Player", "Wall", "PlayerAttack" },
-    })
+    -- Register EnemyHit before PlayerAttack (PlayerAttack ignores EnemyHit for Windfield's
+    -- sensor enter path; the unmasked sensor fixtures still generate contact).
     physics.world:addCollisionClass("EnemyHit", {
         ignores = { "Enemy", "Wall", "EnemyHit" },
+    })
+    physics.world:addCollisionClass("PlayerAttack", {
+        ignores = { "Player", "Wall", "PlayerAttack", "EnemyHit" },
     })
 
     return physics.world

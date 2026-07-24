@@ -1,4 +1,4 @@
--- Idle enemy: Windfield collider owns position; solid body, no AI/combat yet.
+-- Idle enemy: Windfield collider owns position; solid body + EnemyHit sensor hurtbox.
 
 require "scripts.actor"
 local physics = require "scripts.physics"
@@ -33,6 +33,13 @@ function enemy:new(x, y)
     e.collider = physics.newEnemyCollider(x - hitW / 2, y - hitH / 2, hitW, hitH, 2)
     e.collider:setObject(e)
 
+    -- Hurtbox sensor (no solid push); same footprint, synced to solid body.
+    e.hurtW = hitW
+    e.hurtH = hitH
+    e.hurtbox = physics.newSensor(x - e.hurtW / 2, y - e.hurtH / 2, e.hurtW, e.hurtH, "EnemyHit")
+    e.hurtbox:setObject(e)
+    e.hurtbox:setType("kinematic")
+
     e.pos = { x = e.collider:getX(), y = e.collider:getY() }
     e.x = e.pos.x
     e.y = e.pos.y
@@ -40,8 +47,16 @@ function enemy:new(x, y)
     return e
 end
 
---- Idle: static body; no velocity writes needed.
+--- Idle: keep hurtbox glued to solid collider (no drift).
 function enemy:update(dt)
+    self:syncHurtbox()
+end
+
+function enemy:syncHurtbox()
+    if not self.hurtbox then
+        return
+    end
+    self.hurtbox:setPosition(self.collider:getX(), self.collider:getY())
 end
 
 function enemy:syncFromCollider()
@@ -49,6 +64,7 @@ function enemy:syncFromCollider()
     self.pos.y = self.collider:getY()
     self.x = self.pos.x
     self.y = self.pos.y
+    self:syncHurtbox()
 end
 
 function enemy:draw()

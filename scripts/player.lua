@@ -1,10 +1,14 @@
 -- Clean top-down player: Windfield collider owns position.
+-- Temporary Space-held PlayerAttack sensor for hit detect (no sword / damage yet).
 
 require "scripts.actor"
 local physics = require "scripts.physics"
 
 player = {}
 setmetatable(player, { __index = actor })
+
+local ATTACK_W = 18
+local ATTACK_H = 14
 
 --- Pure helper for tests / movement: normalize direction, THEN apply speed.
 function player.normalizedVelocity(dx, dy, speed)
@@ -31,6 +35,10 @@ function player:new(x, y)
         up    = { "w", "up" },
         down  = { "s", "down" },
     }
+    p.facing = { x = 1, y = 0 }
+    p.attackHitbox = nil
+    p.attackW = ATTACK_W
+    p.attackH = ATTACK_H
 
     -- Slightly smaller than sprite for nicer wall sliding.
     local spriteW, spriteH = p.img:getWidth(), p.img:getHeight()
@@ -50,8 +58,69 @@ function player:new(x, y)
     return p
 end
 
+function player:getAttackTopLeft()
+    local fx, fy = self.facing.x, self.facing.y
+    local len = math.sqrt(fx * fx + fy * fy)
+    if len > 0 then
+        fx, fy = fx / len, fy / len
+    else
+        fx, fy = 1, 0
+    end
+
+    local reach = (self.hitW / 2) + (self.attackW / 2) + 2
+    local cx = self.collider:getX() + fx * reach
+    local cy = self.collider:getY() + fy * reach
+    return cx - self.attackW / 2, cy - self.attackH / 2
+end
+
+function player:enableAttackHitbox()
+    if self.attackHitbox then
+        return
+    end
+    local x, y = self:getAttackTopLeft()
+    self.attackHitbox = physics.newSensor(x, y, self.attackW, self.attackH, "PlayerAttack")
+    self.attackHitbox:setObject(self)
+    self.attackHitbox:setType("kinematic")
+end
+
+function player:disableAttackHitbox()
+    if not self.attackHitbox then
+        return
+    end
+    self.attackHitbox:destroy()
+    self.attackHitbox = nil
+end
+
+function player:syncAttackHitbox()
+    if not self.attackHitbox then
+        return
+    end
+    local x, y = self:getAttackTopLeft()
+    self.attackHitbox:setPosition(x + self.attackW / 2, y + self.attackH / 2)
+end
+
+--- After physics.update: one log per EnemyHit enter.
+function player:pollAttackHits()
+    if not self.attackHitbox then
+        return
+    end
+    if self.attackHitbox:enter("EnemyHit") then
+        local data = self.attackHitbox:getEnterCollisionData("EnemyHit")
+        local other = data and data.collider
+        local enemyObj = other and other:getObject()
+        local label = (enemyObj and enemyObj.label) or "?"
+        local ex, ey = 0, 0
+        if enemyObj and enemyObj.pos then
+            ex, ey = enemyObj.pos.x, enemyObj.pos.y
+        elseif other then
+            ex, ey = other:getX(), other:getY()
+        end
+        print(string.format("[hit] PlayerAttack entered EnemyHit (%s @ %.1f, %.1f)", label, ex, ey))
+    end
+end
+
 --- Step 1 of frame order: read input → normalize → setLinearVelocity.
---- (world:update happens in state; then syncFromCollider.)
+--- Also toggles temporary Space attack sensor (create/destroy, no orphans).
 function player:update(dt)
     local input = { x = 0, y = 0 }
 
@@ -68,8 +137,20 @@ function player:update(dt)
         input.y = 1
     end
 
+    if input.x ~= 0 or input.y ~= 0 then
+        self.facing.x = input.x
+        self.facing.y = input.y
+    end
+
     local vx, vy = player.normalizedVelocity(input.x, input.y, self.speed)
     self.collider:setLinearVelocity(vx, vy)
+
+    if love.keyboard.isDown("space") then
+        self:enableAttackHitbox()
+        self:syncAttackHitbox()
+    else
+        self:disableAttackHitbox()
+    end
 end
 
 --- Step 3 of frame order: copy collider position into draw/camera fields.
@@ -78,6 +159,7 @@ function player:syncFromCollider()
     self.pos.y = self.collider:getY()
     self.x = self.pos.x
     self.y = self.pos.y
+    self:syncAttackHitbox()
 end
 
 function player:getVelocity()

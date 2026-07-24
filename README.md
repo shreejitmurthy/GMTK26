@@ -7,10 +7,11 @@ Top-down hack-and-slash jam game. **Countdown timer is health** (damage later dr
 - Grey room + camera follow
 - Windfield world (`scripts/physics.lua`): **zero gravity**, collision classes, stub arena walls
 - Player (`scripts/player.lua`): WASD + arrows, **normalized** diagonal velocity, collider is position source of truth
+- Enemies: solid `Enemy` bodies + `EnemyHit` sensor hurtboxes; **hold Space** for temporary `PlayerAttack` sensor (hit log only)
 - **F1** / backtick toggles collider debug draw; **F2** re-runs console PASS/FAIL selftest
-- STI / animations / combat / countdown UI: not wired yet
+- STI / animations / damage / countdown UI: not wired yet
 
-Physics loop: input → normalize → `setLinearVelocity` → `world:update(dt)` → sync draw/camera from collider.
+Physics loop: input → normalize → `setLinearVelocity` → sync sensors → `world:update(dt)` → hit enter poll → sync draw/camera from collider.
 
 ---
 
@@ -88,7 +89,7 @@ Pass/fail against a playable build:
 - [x] **Walls block** the player; cannot walk through stub arena
 - [x] Player ↔ Enemy solid contact (idle `Enemy` bodies in arena; walk into them — they block like walls)
 - [x] **`PlayerAttack` / `EnemyHit` classes + `newSensor` helper** exist (full attack combat still out of scope)
-- [ ] Attack sensor toggled in-game with Enemy overlap detect (combat pass)
+- [x] Attack sensor toggled in-game with Enemy overlap detect (**hold Space**; console `[hit]` on `PlayerAttack`→`EnemyHit` enter; no damage yet)
 - [x] `world:update(dt)` runs every gameplay frame
 - [x] Debug draw of colliders toggled with **F1** / backtick without breaking camera
 - [x] Wall-creation helper exists so STI can feed the same path later (`addWall` / `addWallsFromObjects`)
@@ -101,10 +102,11 @@ Pass/fail against a playable build:
 2. On load, console should print `[physics_selftest] ALL PASS` (or press **F2** to re-run).
 3. Move with **WASD** and **arrow keys**. Confirm smooth top-down motion and **no gravity drift** when idle.
 4. Walk into stub arena walls / interior blocks: player must stop or slide, not pass through.
-5. Press **F1** (or **\`**): collider outlines appear for player + walls. HUD shows collider pos and **velocity magnitude `|v|`**.
-6. **Diagonal speed check:** hold **Right** only and note `|v|` in the debug HUD; then hold **Up+Right**. Magnitudes must match (within ~1%). If diagonal is ~1.41× faster, normalization is broken (FAIL).
-7. Release movement: `|v|` returns to ~0; camera still follows the player.
-8. Esc quits.
+5. Press **F1** (or **\`**): collider outlines appear for player + walls + **sensors** (`EnemyHit` hurtboxes; `PlayerAttack` while Space held). HUD shows collider pos and **velocity magnitude `|v|`**.
+6. **Hitbox test:** stand near an enemy, **hold Space**. Attack sensor appears in front of facing dir (F1). On overlap enter, console prints `[hit] PlayerAttack entered EnemyHit (...)`. Release Space — hitbox is destroyed (no orphan collider).
+7. **Diagonal speed check:** hold **Right** only and note `|v|` in the debug HUD; then hold **Up+Right**. Magnitudes must match (within ~1%). If diagonal is ~1.41× faster, normalization is broken (FAIL).
+8. Release movement: `|v|` returns to ~0; camera still follows the player.
+9. Esc quits.
 
 ---
 
