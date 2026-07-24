@@ -64,6 +64,29 @@ function selftest.run(playerActor, enemyActors)
         allOk = check("enemy collision class",
             sample.collider.collision_class == "Enemy",
             tostring(sample.collider.collision_class)) and allOk
+        allOk = check("enemy body cannot accumulate shove momentum",
+            sample.collider.body:getType() == "kinematic",
+            tostring(sample.collider.body:getType())) and allOk
+        allOk = check("enemy has non-bouncy soft resistance",
+            nearlyEqual(sample.collider:getRestitution(), 0)
+                and sample.collider.softPadding > 0
+                and sample.collider.resistanceExponent > 0
+                and sample.collider.maxPushDistance > 0
+                and sample.collider.maxPushDistance <= 3
+                and sample.collider.pushSpeed > 0,
+            string.format(
+                "bounce=%.2f padding=%.1f exponent=%.1f maxPush=%.1f",
+                sample.collider:getRestitution(),
+                sample.collider.softPadding,
+                sample.collider.resistanceExponent,
+                sample.collider.maxPushDistance
+            )) and allOk
+
+        local farVX = physics.resistInwardVelocity(-100, 0, 1, 0, 0.25)
+        local closeVX = physics.resistInwardVelocity(-100, 0, 1, 0, 1)
+        allOk = check("pushback strengthens closer to enemy",
+            nearlyEqual(farVX, -75) and nearlyEqual(closeVX, 0),
+            string.format("far=%.1f boundary=%.1f", farVX, closeVX)) and allOk
     else
         allOk = check("enemy collider exists", false, "missing enemyActors[1].collider") and allOk
     end

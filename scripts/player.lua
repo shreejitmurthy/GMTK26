@@ -220,6 +220,7 @@ function player:update(dt)
     end
 
     local vx, vy = player.normalizedVelocity(input.x, input.y, self.speed)
+    vx, vy = physics.applyEnemyResistance(self.collider, vx, vy, dt)
     self.collider:setLinearVelocity(vx, vy)
 
     self:updateSwing(dt)

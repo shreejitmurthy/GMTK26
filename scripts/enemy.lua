@@ -1,4 +1,4 @@
--- Idle enemy: Windfield collider owns position; solid body + EnemyHit sensor hurtbox.
+-- Idle enemy: Windfield collider owns position; soft barrier + EnemyHit hurtbox.
 
 require "scripts.actor"
 local physics = require "scripts.physics"
@@ -9,9 +9,11 @@ setmetatable(enemy, { __index = actor })
 local DEFAULT_HIT_W = 14
 local DEFAULT_HIT_H = 14
 
-function enemy:new(x, y)
+--- physicsOptions can tune resistance and the small bounded contact nudge.
+function enemy:new(x, y, physicsOptions)
     x = x or 200
     y = y or 150
+    physicsOptions = physicsOptions or {}
 
     local e = actor:new(x, y, "enemy")
     setmetatable(e, { __index = enemy })
@@ -30,10 +32,17 @@ function enemy:new(x, y)
     e.hitH = hitH
 
     -- BSG takes top-left; our pos is sprite/collider center.
-    e.collider = physics.newEnemyCollider(x - hitW / 2, y - hitH / 2, hitW, hitH, 2)
+    e.collider = physics.newEnemyCollider(
+        x - hitW / 2,
+        y - hitH / 2,
+        hitW,
+        hitH,
+        2,
+        physicsOptions
+    )
     e.collider:setObject(e)
 
-    -- Hurtbox sensor (no solid push); same footprint, synced to solid body.
+    -- This separate sensor follows the pushable body and handles attacks.
     e.hurtW = hitW
     e.hurtH = hitH
     e.hurtbox = physics.newSensor(x - e.hurtW / 2, y - e.hurtH / 2, e.hurtW, e.hurtH, "EnemyHit")
@@ -47,7 +56,7 @@ function enemy:new(x, y)
     return e
 end
 
---- Idle: keep hurtbox glued to solid collider (no drift).
+--- Idle: keep the attack hurtbox glued to the non-impulse body.
 function enemy:update(dt)
     self:syncHurtbox()
 end
