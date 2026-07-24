@@ -98,7 +98,7 @@ function state:drawHud()
         10,
         10
     )
-    love.graphics.print("Move: WASD / Arrows | Hold Space: attack sensor | F1: physics debug | F2: selftest | Esc: quit", 10, 28)
+    love.graphics.print("Move: WASD / Arrows | Space/Click: swing | F1: physics debug | F2: selftest | Esc: quit", 10, 28)
 
     if physics.debug then
         local vx, vy = playerActor:getVelocity()
@@ -175,5 +175,19 @@ function love.keypressed(k)
             end
         end
         physics_selftest.run(state:getActor("player"), enemies)
+    elseif k == "space" then
+        local playerActor = state:getActor("player")
+        if playerActor and playerActor.startSwing then
+            playerActor:startSwing()
+        end
+    end
+end
+
+function love.mousepressed(x, y, button)
+    if button == 1 then
+        local playerActor = state:getActor("player")
+        if playerActor and playerActor.startSwing then
+            playerActor:startSwing()
+        end
     end
 end

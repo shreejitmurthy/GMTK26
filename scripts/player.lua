@@ -1,5 +1,5 @@
 -- Clean top-down player: Windfield collider owns position.
--- Temporary Space-held PlayerAttack sensor for hit detect (no sword / damage yet).
+-- Decoupled sword swing moves PlayerAttack; damage/timer later.
 
 require "scripts.actor"
 local physics = require "scripts.physics"
@@ -7,8 +7,13 @@ local physics = require "scripts.physics"
 player = {}
 setmetatable(player, { __index = actor })
 
-local ATTACK_W = 18
-local ATTACK_H = 14
+-- PlayerAttack sensor size (AABB approx of sword volume; rotated with swing).
+local ATTACK_W = 22
+local ATTACK_H = 8
+local SWING_DURATION = 0.2
+local SWING_ARC = math.rad(120)
+local SWING_START = -math.rad(60)
+local SWORD_LENGTH = 22
 
 --- Pure helper for tests / movement: normalize direction, THEN apply speed.
 function player.normalizedVelocity(dx, dy, speed)
@@ -40,6 +45,23 @@ function player:new(x, y)
     p.attackW = ATTACK_W
     p.attackH = ATTACK_H
 
+    -- Decoupled swing (independent of player body sprite).
+    p.swinging = false
+    p.swingT = 0
+    p.swingDuration = SWING_DURATION
+    p.swingBaseAngle = 0
+    p.swingHitEnemies = {}
+    p.sword = {
+        angle = 0,
+        x = 0,
+        y = 0,
+        baseX = 0,
+        baseY = 0,
+        tipX = 0,
+        tipY = 0,
+        length = SWORD_LENGTH,
+    }
+
     -- Slightly smaller than sprite for nicer wall sliding.
     local spriteW, spriteH = p.img:getWidth(), p.img:getHeight()
     local hitW = math.max(8, spriteW * 0.7)
@@ -58,29 +80,38 @@ function player:new(x, y)
     return p
 end
 
-function player:getAttackTopLeft()
-    local fx, fy = self.facing.x, self.facing.y
-    local len = math.sqrt(fx * fx + fy * fy)
-    if len > 0 then
-        fx, fy = fx / len, fy / len
-    else
-        fx, fy = 1, 0
-    end
+--- Sword pose from swing progress (0..1). Angle+offset relative to facing at swing start.
+function player:updateSwordPose(progress)
+    local localAngle = SWING_START + SWING_ARC * progress
+    local angle = self.swingBaseAngle + localAngle
+    local reach = (self.hitW / 2) + 4
+    local px, py = self.collider:getX(), self.collider:getY()
+    local mid = reach + self.sword.length / 2
 
-    local reach = (self.hitW / 2) + (self.attackW / 2) + 2
-    local cx = self.collider:getX() + fx * reach
-    local cy = self.collider:getY() + fy * reach
-    return cx - self.attackW / 2, cy - self.attackH / 2
+    self.sword.angle = angle
+    self.sword.x = px + math.cos(angle) * mid
+    self.sword.y = py + math.sin(angle) * mid
+    self.sword.baseX = px + math.cos(angle) * reach
+    self.sword.baseY = py + math.sin(angle) * reach
+    self.sword.tipX = px + math.cos(angle) * (reach + self.sword.length)
+    self.sword.tipY = py + math.sin(angle) * (reach + self.sword.length)
 end
 
 function player:enableAttackHitbox()
     if self.attackHitbox then
         return
     end
-    local x, y = self:getAttackTopLeft()
-    self.attackHitbox = physics.newSensor(x, y, self.attackW, self.attackH, "PlayerAttack")
+    local cx, cy = self.sword.x, self.sword.y
+    self.attackHitbox = physics.newSensor(
+        cx - self.attackW / 2,
+        cy - self.attackH / 2,
+        self.attackW,
+        self.attackH,
+        "PlayerAttack"
+    )
     self.attackHitbox:setObject(self)
     self.attackHitbox:setType("kinematic")
+    self.attackHitbox:setAngle(self.sword.angle)
 end
 
 function player:disableAttackHitbox()
@@ -91,15 +122,56 @@ function player:disableAttackHitbox()
     self.attackHitbox = nil
 end
 
+--- Place PlayerAttack on the current sword volume (not a static facing offset).
 function player:syncAttackHitbox()
     if not self.attackHitbox then
         return
     end
-    local x, y = self:getAttackTopLeft()
-    self.attackHitbox:setPosition(x + self.attackW / 2, y + self.attackH / 2)
+    self.attackHitbox:setPosition(self.sword.x, self.sword.y)
+    self.attackHitbox:setAngle(self.sword.angle)
 end
 
---- After physics.update: one log per EnemyHit enter.
+--- Press Space / click: start short-lived swing. Swing moves PlayerAttack; damage/timer later.
+function player:startSwing()
+    if self.swinging then
+        return
+    end
+
+    local fx, fy = self.facing.x, self.facing.y
+    local len = math.sqrt(fx * fx + fy * fy)
+    if len > 0 then
+        fx, fy = fx / len, fy / len
+    else
+        fx, fy = 1, 0
+    end
+
+    self.swinging = true
+    self.swingT = 0
+    self.swingBaseAngle = math.atan2(fy, fx)
+    self.swingHitEnemies = {}
+
+    self:updateSwordPose(0)
+    self:enableAttackHitbox()
+    self:syncAttackHitbox()
+end
+
+function player:updateSwing(dt)
+    if not self.swinging then
+        return
+    end
+
+    self.swingT = self.swingT + dt
+    local progress = math.min(1, self.swingT / self.swingDuration)
+    self:updateSwordPose(progress)
+    self:syncAttackHitbox()
+
+    if progress >= 1 then
+        self.swinging = false
+        self:disableAttackHitbox()
+    end
+end
+
+--- After physics.update: PlayerAttack enters EnemyHit → log once per enemy per swing.
 function player:pollAttackHits()
     if not self.attackHitbox then
         return
@@ -108,6 +180,12 @@ function player:pollAttackHits()
         local data = self.attackHitbox:getEnterCollisionData("EnemyHit")
         local other = data and data.collider
         local enemyObj = other and other:getObject()
+        if enemyObj and self.swingHitEnemies[enemyObj] then
+            return
+        end
+        if enemyObj then
+            self.swingHitEnemies[enemyObj] = true
+        end
         local label = (enemyObj and enemyObj.label) or "?"
         local ex, ey = 0, 0
         if enemyObj and enemyObj.pos then
@@ -119,8 +197,7 @@ function player:pollAttackHits()
     end
 end
 
---- Step 1 of frame order: read input → normalize → setLinearVelocity.
---- Also toggles temporary Space attack sensor (create/destroy, no orphans).
+--- Step 1 of frame order: read input → normalize → setLinearVelocity; advance swing.
 function player:update(dt)
     local input = { x = 0, y = 0 }
 
@@ -145,12 +222,7 @@ function player:update(dt)
     local vx, vy = player.normalizedVelocity(input.x, input.y, self.speed)
     self.collider:setLinearVelocity(vx, vy)
 
-    if love.keyboard.isDown("space") then
-        self:enableAttackHitbox()
-        self:syncAttackHitbox()
-    else
-        self:disableAttackHitbox()
-    end
+    self:updateSwing(dt)
 end
 
 --- Step 3 of frame order: copy collider position into draw/camera fields.
@@ -159,7 +231,12 @@ function player:syncFromCollider()
     self.pos.y = self.collider:getY()
     self.x = self.pos.x
     self.y = self.pos.y
-    self:syncAttackHitbox()
+    -- Keep sword + PlayerAttack glued to body if we moved during the swing.
+    if self.swinging then
+        local progress = math.min(1, self.swingT / self.swingDuration)
+        self:updateSwordPose(progress)
+        self:syncAttackHitbox()
+    end
 end
 
 function player:getVelocity()
@@ -183,4 +260,13 @@ function player:draw()
         self.img:getWidth() / 2,
         self.img:getHeight() / 2
     )
+
+    -- Placeholder sword: line along swing (decoupled from body sprite).
+    if self.swinging then
+        love.graphics.setColor(0.92, 0.88, 0.55, 1)
+        love.graphics.setLineWidth(3)
+        love.graphics.line(self.sword.baseX, self.sword.baseY, self.sword.tipX, self.sword.tipY)
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(1, 1, 1, 1)
+    end
 end
