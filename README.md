@@ -1,6 +1,6 @@
 # GMTK26 — Plague Doctor (LÖVE2D)
 
-Top-down hack-and-slash jam game. **Countdown timer is health** (damage later drains that timer; physics only needs to detect damaging contact).
+Top-down hack-and-slash jam game. **Countdown timer is health** — the time you can withstand the plague. Hits (soon) drain seconds; at 0 the company extracts you.
 
 ## What works today
 
@@ -12,8 +12,9 @@ Top-down hack-and-slash jam game. **Countdown timer is health** (damage later dr
 - Enemies: soft barriers + `EnemyHit` sensor hurtboxes; resistance increases near their body and contact permits only a tiny, momentum-free nudge
 - Enemies can **move** via shared locomotion (`moveToward` / `moveAway` / `stop`); after intentional AI motion each frame, `pushAnchorX/Y` is refreshed to the collider so soft contact still works and AI is not yanked back to spawn
 - Four enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper**, **ranger** — polished locomotion plus the ranger's cornered melee response (countdown damage later)
+- **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**). Ticks down in gameplay; at 0 → **EXTRACTED** (input/AI frozen). **H** debug-damages **3s**. Real enemy → timer drain not wired yet
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
-- STI / full animations / damage / countdown UI: not wired yet
+- STI / full animations / combat damage→timer: not wired yet
 
 Physics loop: input → normalize → `setLinearVelocity` → swing pose + sync sensors → `world:update(dt)` → hit enter poll → sync draw/camera from collider.
 
@@ -109,10 +110,20 @@ Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:
 - Stub arena walls via `physics.spawnTestArena` until STI lands.
 - STI object-layer → static `Wall` colliders should call `physics.addWallsFromObjects(objects)` (drop-in).
 
+### Plague timer (health)
+
+- Module: `scripts/countdown.lua`, owned by gameplay as `state.countdown`.
+- **Default duration: 90 seconds** (jam feel; tune ~60–120).
+- Display: large **top-center** readout (`M:SS`, or tenths when under 10s). No separate HP bar / plague meter widget.
+- Urgency: warmer tint below 25% remaining; subtle pulse below 10%.
+- **Debug:** press **H** to call `countdown:damage(3)` (~3 seconds). Console: `[countdown] damage 3.0 → X.Xs left`.
+- At 0: `state.extracted = true`, show **EXTRACTED**, freeze player/enemy AI; Esc still quits.
+- **Next:** wire `player:onHitByEnemy` → `countdown:damage(...)` so real combat drains time. Debug key remains for tuning.
+
 ### Later (do not build full systems now)
-- Wire **damage → countdown timer** (player health is time; drain on hit — no UI yet).
-- Enemy **Attack sensors / damage**: ranger close-range hits now call `player:onHitByEnemy()`; wire that callback to countdown damage later. Other enemy attacks remain unwired.
-- Classes/`newSensor` helpers exist; plague-meter UI and real damage numbers still out of scope.
+- Wire **enemy damage → countdown** (ranger already calls `player:onHitByEnemy()`; connect that to `state.countdown:damage`).
+- Other enemy attacks remain unwired.
+- Classes/`newSensor` helpers exist; no plague-meter bar / builds / classes this pass.
 
 ---
 
@@ -146,9 +157,10 @@ Pass/fail against a playable build:
 8. **Diagonal speed check:** hold **Right** only and note `|v|` in the debug HUD; then hold **Up+Right**. Magnitudes must match (within ~1%). If diagonal is ~1.41× faster, normalization is broken (FAIL).
 9. Release movement: `|v|` returns to ~0; camera still follows the player.
 10. Esc quits.
+11. **Countdown check:** big timer ticks at top-center. Press **H** — time drops ~3s immediately (console log). Let it hit 0 (or mash H) → **EXTRACTED**; timer stays at 0, movement/AI freeze, Esc quits. Sword/enemies still work before extract; combat does not yet drain the timer.
 
 ---
 
 ## Out of scope this pass
 
-STI map polish, animation sets, countdown UI, plague meter, builds/classes, full attack combat — except leaving sensor/class hooks for damage → timer drain later.
+STI map polish, animation sets, plague meter bar, builds/classes, full attack combat damage numbers — except the countdown HUD + debug drain; real enemy → timer wire is next.

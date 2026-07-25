@@ -6,6 +6,7 @@ camera = require "lib.camera"
 
 require "scripts.actor"
 local physics = require "scripts.physics"
+local countdown = require "scripts.countdown"
 require "scripts.player"
 require "scripts.sword"
 require "scripts.slash_trail"
@@ -30,7 +31,10 @@ GAME_STATE = {
 state = {
     actors = {},
     canvas = nil,
-    gameState = GAME_STATE.GAMEPLAY
+    gameState = GAME_STATE.GAMEPLAY,
+    countdown = nil,
+    extracted = false,
+    hudTimerFont = nil,
 }
 
 -- STATE
@@ -60,17 +64,38 @@ end
 function state:update(dt)
     if state.gameState == GAME_STATE.GAMEPLAY then
         local playerActor = self:getActor("player")
-        for _, actor in ipairs(self.actors) do
-            if actor.label == "enemy" then
-                actor:update(dt, playerActor)
-            else
-                actor:update(dt)
+
+        -- Timer-as-health ticks every gameplay frame until extract.
+        if self.countdown and not self.extracted then
+            self.countdown:update(dt)
+            if self.countdown:isExpired() then
+                self.extracted = true
+                self.countdown:pause()
+                print("[countdown] EXTRACTED — plague time exhausted")
+            end
+        end
+
+        -- Freeze player input / enemy AI once the company pulls you out.
+        if not self.extracted then
+            for _, actor in ipairs(self.actors) do
+                if actor.label == "enemy" then
+                    actor:update(dt, playerActor)
+                else
+                    actor:update(dt)
+                end
+            end
+        elseif playerActor and playerActor.collider then
+            playerActor.collider:setLinearVelocity(0, 0)
+            for _, actor in ipairs(self.actors) do
+                if actor.label == "enemy" and actor.collider then
+                    actor.collider:setLinearVelocity(0, 0)
+                end
             end
         end
 
         physics.update(dt)
 
-        if playerActor and playerActor.pollAttackHits then
+        if not self.extracted and playerActor and playerActor.pollAttackHits then
             playerActor:pollAttackHits()
         end
 
@@ -115,18 +140,86 @@ function state:drawActors()
 end
 
 function state:drawHud()
+    local sw = love.graphics.getWidth()
+    local sh = love.graphics.getHeight()
+
+    -- Hero HUD: plague timer (health) top-center.
+    if self.countdown then
+        local font = self.hudTimerFont
+        local prevFont = love.graphics.getFont()
+        if font then
+            love.graphics.setFont(font)
+        end
+
+        local text = self.countdown:format()
+        local ratio = self.countdown:getRatio()
+        local r, g, b, a = 0.95, 0.92, 0.85, 1
+        if ratio < 0.25 then
+            -- Warmer / redder under a quarter of plague resistance left.
+            local t = 1 - (ratio / 0.25)
+            r = 0.95 + 0.05 * t
+            g = 0.92 - 0.55 * t
+            b = 0.85 - 0.70 * t
+        end
+        local scale = 1
+        if ratio < 0.1 and not self.extracted then
+            local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 6)
+            a = 0.65 + 0.35 * pulse
+            scale = 1 + 0.04 * pulse
+        end
+
+        local tw = love.graphics.getFont():getWidth(text)
+        local x = sw / 2
+        local y = 28
+        love.graphics.push()
+        love.graphics.translate(x, y)
+        love.graphics.scale(scale, scale)
+        love.graphics.setColor(0, 0, 0, 0.45 * a)
+        love.graphics.print(text, -tw / 2 + 2, 2)
+        love.graphics.setColor(r, g, b, a)
+        love.graphics.print(text, -tw / 2, 0)
+        love.graphics.pop()
+
+        if font then
+            love.graphics.setFont(prevFont)
+        end
+    end
+
+    if self.extracted then
+        local msg = "EXTRACTED"
+        local prevFont = love.graphics.getFont()
+        if self.hudTimerFont then
+            love.graphics.setFont(self.hudTimerFont)
+        end
+        local tw = love.graphics.getFont():getWidth(msg)
+        local th = love.graphics.getFont():getHeight()
+        love.graphics.setColor(0, 0, 0, 0.55)
+        love.graphics.rectangle("fill", 0, sh / 2 - th, sw, th * 2.4)
+        love.graphics.setColor(0.95, 0.85, 0.7, 1)
+        love.graphics.print(msg, (sw - tw) / 2, sh / 2 - th / 2)
+        love.graphics.setFont(prevFont)
+        love.graphics.setColor(1, 1, 1, 0.85)
+        love.graphics.printf("Esc to quit", 0, sh / 2 + th * 0.7, sw, "center")
+    end
+
     local playerActor = self:getActor("player")
     if not playerActor then
+        love.graphics.setColor(1, 1, 1, 1)
         return
     end
 
+    -- Debug / help stays lower-left so it does not compete with the timer.
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.print(
         string.format("Player position: %.1f, %.1f", playerActor.pos.x, playerActor.pos.y),
         10,
-        10
+        sh - 72
     )
-    love.graphics.print("Move: WASD / Arrows | Space/Click: swing | F1: physics debug | F2: selftest | Esc: quit", 10, 28)
+    love.graphics.print(
+        "Move: WASD / Arrows | Space/Click: swing | H: debug -3s | F1: physics debug | F2: selftest | Esc: quit",
+        10,
+        sh - 54
+    )
 
     if physics.debug then
         local vx, vy = playerActor:getVelocity()
@@ -141,12 +234,7 @@ function state:drawHud()
                 speed
             ),
             10,
-            46
-        )
-        love.graphics.print(
-            "Compare |v| while holding Right vs Up+Right — magnitudes should match.",
-            10,
-            64
+            sh - 36
         )
 
         local counts = { chaser = 0, fleer = 0, keeper = 0, ranger = 0 }
@@ -175,13 +263,18 @@ function state:drawHud()
                 nearest and string.format("%.1f", nearest) or "-"
             ),
             10,
-            82
+            sh - 18
         )
     end
 end
 
 function love.load()
     physics.init()
+
+    -- Plague resistance window (seconds). Timer IS health.
+    state.countdown = countdown.new({ duration = 90 })
+    state.extracted = false
+    state.hudTimerFont = love.graphics.newFont(48)
 
     local spawnX, spawnY = 200, 150
     physics.spawnTestArena(spawnX, spawnY)
@@ -251,13 +344,29 @@ function love.keypressed(k)
             end
         end
         physics_selftest.run(state:getActor("player"), enemies)
+    elseif k == "h" then
+        -- Debug plague damage (real enemy drain wires next).
+        if state.countdown and not state.extracted then
+            state.countdown:damage(3)
+            print(string.format(
+                "[countdown] damage 3.0 → %.1fs left",
+                state.countdown:getRemaining()
+            ))
+            if state.countdown:isExpired() then
+                state.extracted = true
+                state.countdown:pause()
+                print("[countdown] EXTRACTED — plague time exhausted")
+            end
+        end
     elseif k == "space" then
-        startPlayerSwingAt(love.mouse.getPosition())
+        if not state.extracted then
+            startPlayerSwingAt(love.mouse.getPosition())
+        end
     end
 end
 
 function love.mousepressed(x, y, button)
-    if button == 1 then
+    if button == 1 and not state.extracted then
         startPlayerSwingAt(x, y)
     end
 end
