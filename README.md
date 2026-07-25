@@ -13,7 +13,8 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 - Enemies can **move** via shared locomotion (`moveToward` / `moveAway` / `stop`); after intentional AI motion each frame, `pushAnchorX/Y` is refreshed to the collider so soft contact still works and AI is not yanked back to spawn
 - **Kinematic wall policy:** Enemy bodies are kinematic (Box2D does not resolve Enemy vs Wall). Motion uses `slideEnemyAgainstWalls` / `constrainEnemyMotion`; soft-push uses `trySetEnemyPosition` (never teleports into walls). `clampEnemyToPlayable` + per-frame `clampAllEnemiesToPlayable` keep every enemy inside the stub arena interior and clear of Wall colliders (unstick prefers arena center — never ejects OOB).
 - Four enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper**, **ranger** — polished locomotion; ranger cornered melee drains the plague timer
-- **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**) with a thin **PLAGUE TOLERANCE** fuse. Enemy hits → `state:applyPlayerDamage` → `countdown:damage` (**5s** default, **0.6s** i-frames). **H** debug-damages **3s** (bypasses i-frames). Player sword hits do **not** drain your timer. At 0 → **EXTRACTED**
+- **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**) with a thin **Plague Tolerance** fuse. Enemy hits → `state:applyPlayerDamage` → `countdown:damage` (**5s** default, **0.6s** i-frames). **H** debug-damages **3s** (bypasses i-frames). Player sword hits do **not** drain your timer. At 0 → **EXTRACTED**
+- **Period HUD type:** `res/fonts/Italianno-Regular.ttf` (OFL) — copperplate / roundhand cursive for timer, labels, extract, help text
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
 - STI: not wired yet
 
@@ -115,7 +116,7 @@ Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:
 
 - Module: `scripts/countdown.lua`, owned by gameplay as `state.countdown`.
 - **Default duration: 90 seconds** (jam feel; tune ~60–120).
-- Display: large **top-center** clock (`M:SS`, tenths under 10s) + thin segmented **PLAGUE TOLERANCE** fuse (width = `getRatio()`, same color family — not a heart HP bar).
+- Display: large **top-center** clock (`M:SS`, tenths under 10s) in Italianno cursive + thin segmented **Plague Tolerance** fuse (width = `getRatio()`, same color family — not a heart HP bar).
 - Feedback: `:damage()` sets `damagePulse` (~0.4s) — digit/fuse flash + floating `-Xs`. Ratio < 0.15 → subtle screen-edge tint.
 - Urgency: warmer tint below 25% remaining; subtle pulse below 10%.
 - **Combat drain (done):** `player:onHitByEnemy` → `state:applyPlayerDamage(amount, source)` → `countdown:damage`. Default hit: **`PLAYER_HIT_DAMAGE_SECONDS` / `player.HIT_DAMAGE_SECONDS` = 5**. I-frames: **`PLAYER_HURT_IFRAME` / `player.HURT_IFRAME` = 0.6s** (`player.hurtIFrame`). Player sword → enemy does **not** drain the player timer.

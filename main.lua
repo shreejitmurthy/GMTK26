@@ -277,7 +277,8 @@ function state:drawHud()
         end
 
         love.graphics.setFont(labelFont)
-        local label = "PLAGUE TOLERANCE"
+        -- Title case reads cleaner in roundhand than all-caps.
+        local label = "Plague Tolerance"
         local lw = labelFont:getWidth(label)
         love.graphics.setColor(r, g, b, 0.55 * a)
         love.graphics.print(label, cx - lw / 2, fuseY + fuseH + 4)
@@ -379,15 +380,23 @@ function state:drawHud()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+local function loadScriptFont(size)
+    -- Italianno: copperplate / roundhand cursive (18th–19th c. feel). OFL.
+    local font = love.graphics.newFont("res/fonts/Italianno-Regular.ttf", size)
+    font:setFilter("linear", "linear")
+    return font
+end
+
 function love.load()
     physics.init()
 
     -- Plague resistance window (seconds). Timer IS health.
     state.countdown = countdown.new({ duration = 90 })
     state.extracted = false
-    state.hudTimerFont = love.graphics.newFont(56)
-    state.hudLabelFont = love.graphics.newFont(12)
-    state.hudHelpFont = love.graphics.newFont(13)
+    state.hudTimerFont = loadScriptFont(72)
+    state.hudLabelFont = loadScriptFont(26)
+    state.hudHelpFont = loadScriptFont(20)
+    love.graphics.setFont(state.hudHelpFont)
 
     local spawnX, spawnY = 200, 150
     physics.spawnTestArena(spawnX, spawnY)
