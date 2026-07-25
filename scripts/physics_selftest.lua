@@ -67,6 +67,10 @@ function selftest.run(playerActor, enemyActors)
         allOk = check("enemy body cannot accumulate shove momentum",
             sample.collider.body:getType() == "kinematic",
             tostring(sample.collider.body:getType())) and allOk
+        allOk = check("enemy locomotion helpers exist",
+            type(physics.constrainEnemyMotion) == "function"
+                and type(physics.slideEnemyAgainstWalls) == "function"
+                and type(physics.applyEnemySeparation) == "function") and allOk
         allOk = check("enemy has non-bouncy soft resistance",
             nearlyEqual(sample.collider:getRestitution(), 0)
                 and sample.collider.softPadding > 0
@@ -105,6 +109,38 @@ function selftest.run(playerActor, enemyActors)
             sample.hurtbox:getObject() == sample) and allOk
     else
         allOk = check("enemy EnemyHit hurtbox exists", false, "missing enemyActors[1].hurtbox") and allOk
+    end
+
+    if sample and sample.collider then
+        allOk = check("enemy has speed",
+            type(sample.speed) == "number" and sample.speed > 0,
+            tostring(sample.speed)) and allOk
+        allOk = check("enemy locomotion API exists",
+            type(sample.moveToward) == "function"
+                and type(sample.moveAway) == "function"
+                and type(sample.stop) == "function"
+                and type(sample.refreshPushAnchor) == "function") and allOk
+
+        local cx, cy = sample.collider:getX(), sample.collider:getY()
+        sample.collider:setPosition(cx + 8, cy - 4)
+        sample:refreshPushAnchor()
+        local ax, ay = sample.collider.pushAnchorX, sample.collider.pushAnchorY
+        local nx, ny = sample.collider:getX(), sample.collider:getY()
+        allOk = check("pushAnchor matches collider after refresh",
+            nearlyEqual(ax, nx, 0.01) and nearlyEqual(ay, ny, 0.01),
+            string.format("anchor %.1f,%.1f collider %.1f,%.1f", ax, ay, nx, ny)) and allOk
+
+        sample:moveToward(nx + 50, ny + 50, sample.speed)
+        ax, ay = sample.collider.pushAnchorX, sample.collider.pushAnchorY
+        nx, ny = sample.collider:getX(), sample.collider:getY()
+        allOk = check("pushAnchor matches collider after moveToward",
+            nearlyEqual(ax, nx, 0.01) and nearlyEqual(ay, ny, 0.01),
+            string.format("anchor %.1f,%.1f collider %.1f,%.1f", ax, ay, nx, ny)) and allOk
+
+        -- Restore spawn pose so gameplay does not inherit selftest motion.
+        sample.collider:setPosition(cx, cy)
+        sample:stop()
+        sample:syncFromCollider()
     end
 
     -- Diagonal vs cardinal: normalize BEFORE speed (FAIL if √2 speedup).

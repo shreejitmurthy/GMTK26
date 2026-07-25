@@ -57,13 +57,17 @@ end
 --   5) camera follows synced player pos
 function state:update(dt)
     if state.gameState == GAME_STATE.GAMEPLAY then
+        local playerActor = self:getActor("player")
         for _, actor in ipairs(self.actors) do
-            actor:update(dt)
+            if actor.label == "enemy" then
+                actor:update(dt, playerActor)
+            else
+                actor:update(dt)
+            end
         end
 
         physics.update(dt)
 
-        local playerActor = self:getActor("player")
         if playerActor and playerActor.pollAttackHits then
             playerActor:pollAttackHits()
         end
@@ -131,6 +135,7 @@ function love.load()
 
     local playerActor = player:new(spawnX, spawnY)
     -- Inside stub arena (center ~200,150); clear of interior wall blocks.
+    -- Temporary: all enemies chase for locomotion validation (Prompt 2: typed behaviors).
     local enemies = {
         enemy:new(120, 100),
         enemy:new(280, 100),
@@ -138,7 +143,7 @@ function love.load()
     }
     cam = camera(playerActor.pos.x, playerActor.pos.y, zoom)
 
-    -- Push actors we want in the scene (player + idle enemies).
+    -- Push actors we want in the scene (player + enemies).
     state:init(playerActor, unpack(enemies))
 
     physics_selftest.run(playerActor, enemies)

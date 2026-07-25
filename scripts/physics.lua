@@ -25,7 +25,13 @@ function physics.init()
     physics.enemies = {}
 
     physics.world:addCollisionClass("Player")
-    physics.world:addCollisionClass("Enemy")
+    -- Kinematic enemies must not solid-shove the dynamic player (that tunnels through walls
+    -- when cornered). Soft resistance + separation handle player↔enemy feel instead.
+    -- Kinematic↔kinematic / kinematic↔static also never resolve in Box2D, so wall slide
+    -- and enemy separation are applied in constrainEnemyMotion.
+    physics.world:addCollisionClass("Enemy", {
+        ignores = { "Player" },
+    })
     physics.world:addCollisionClass("Wall")
     -- Sensors: detect overlaps but ignore solid resolve with most solids via setSensor.
     -- Register EnemyHit before PlayerAttack (PlayerAttack ignores EnemyHit for Windfield's
@@ -146,10 +152,15 @@ end
 
 --- Apply increasingly strong resistance as the player approaches an enemy body.
 --- At near-contact it also gives the enemy a tiny, position-limited nudge.
+--- When overlapping the hard contact radius, add gentle outward separation so
+--- chasing enemies (which ignore Player solids) still displace the player without
+--- Box2D crushing them through walls.
 function physics.applyEnemyResistance(playerCollider, vx, vy, dt)
     local px, py = playerCollider:getX(), playerCollider:getY()
     local playerHalfW = playerCollider.halfWidth or 0
     local playerHalfH = playerCollider.halfHeight or 0
+    -- Cap outward push so soft contact cannot launch the player.
+    local maxSeparation = 90
 
     for _, enemyCollider in ipairs(physics.enemies) do
         if not enemyCollider:isDestroyed() then
@@ -177,12 +188,110 @@ function physics.applyEnemyResistance(playerCollider, vx, vy, dt)
                         physics.nudgeEnemy(enemyCollider, nx, ny, pushStrength, dt)
                     end
                     vx, vy = physics.resistInwardVelocity(vx, vy, nx, ny, strength)
+
+                    if distance < contactDistance then
+                        local overlap = 1 - (distance / contactDistance)
+                        local sep = maxSeparation * overlap * overlap
+                        vx = vx + nx * sep
+                        vy = vy + ny * sep
+                    end
                 end
             end
         end
     end
 
     return vx, vy
+end
+
+local function enemyHitsWallAt(enemyCollider, cx, cy)
+    local hw = enemyCollider.halfWidth or 0
+    local hh = enemyCollider.halfHeight or 0
+    local hits = physics.world:queryRectangleArea(cx - hw, cy - hh, hw * 2, hh * 2, { "Wall" })
+    return #hits > 0
+end
+
+--- Zero velocity into walls (kinematic bodies do not resolve vs static Wall).
+function physics.slideEnemyAgainstWalls(enemyCollider, vx, vy, dt)
+    dt = dt or (1 / 60)
+    local x, y = enemyCollider:getX(), enemyCollider:getY()
+
+    if enemyHitsWallAt(enemyCollider, x, y) then
+        -- Already embedded: step out along cardinals, then halt this frame.
+        for dist = 2, 28, 2 do
+            local dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+            for _, dir in ipairs(dirs) do
+                local nx, ny = x + dir[1] * dist, y + dir[2] * dist
+                if not enemyHitsWallAt(enemyCollider, nx, ny) then
+                    enemyCollider:setPosition(nx, ny)
+                    return 0, 0
+                end
+            end
+        end
+        return 0, 0
+    end
+
+    local nextX, nextY = x + vx * dt, y + vy * dt
+    if enemyHitsWallAt(enemyCollider, nextX, nextY) then
+        if enemyHitsWallAt(enemyCollider, nextX, y) then
+            vx = 0
+        end
+        if enemyHitsWallAt(enemyCollider, x, nextY) then
+            vy = 0
+        end
+        if enemyHitsWallAt(enemyCollider, x + vx * dt, y + vy * dt) then
+            vx, vy = 0, 0
+        end
+    end
+
+    return vx, vy
+end
+
+--- Steer kinematic enemies apart (they pass through each other in Box2D).
+function physics.applyEnemySeparation(enemyCollider, vx, vy)
+    local x, y = enemyCollider:getX(), enemyCollider:getY()
+    local hw = enemyCollider.halfWidth or 7
+    local hh = enemyCollider.halfHeight or 7
+    local sepRadius = (hw + hh) * 1.6
+    local sepX, sepY = 0, 0
+
+    for _, other in ipairs(physics.enemies) do
+        if other ~= enemyCollider and not other:isDestroyed() then
+            local ox, oy = other:getX(), other:getY()
+            local dx, dy = x - ox, y - oy
+            local dist = math.sqrt(dx * dx + dy * dy)
+            if dist > 0 and dist < sepRadius then
+                local weight = (sepRadius - dist) / sepRadius
+                sepX = sepX + (dx / dist) * weight
+                sepY = sepY + (dy / dist) * weight
+            elseif dist == 0 then
+                -- Identical centers: break the tie with a stable hash-ish offset.
+                sepX = sepX + 1
+            end
+        end
+    end
+
+    local sepLen = math.sqrt(sepX * sepX + sepY * sepY)
+    if sepLen > 0 then
+        -- Blend: separation is strong enough to prevent stacking while chasing.
+        local sepSpeed = 80
+        vx = vx + (sepX / sepLen) * sepSpeed * math.min(1, sepLen)
+        vy = vy + (sepY / sepLen) * sepSpeed * math.min(1, sepLen)
+    end
+
+    return vx, vy
+end
+
+--- Separation + wall slide, then clamp to maxSpeed (no √2 boost from blending).
+function physics.constrainEnemyMotion(enemyCollider, vx, vy, dt, maxSpeed)
+    vx, vy = physics.applyEnemySeparation(enemyCollider, vx, vy)
+    if maxSpeed and maxSpeed > 0 then
+        local speed = math.sqrt(vx * vx + vy * vy)
+        if speed > maxSpeed then
+            vx = vx / speed * maxSpeed
+            vy = vy / speed * maxSpeed
+        end
+    end
+    return physics.slideEnemyAgainstWalls(enemyCollider, vx, vy, dt)
 end
 
 --- Static wall rectangle. x/y are top-left. STI-ready drop-in.

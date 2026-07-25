@@ -1,4 +1,5 @@
--- Idle enemy: Windfield collider owns position; soft barrier + EnemyHit hurtbox.
+-- Enemy: Windfield collider owns position; soft barrier + EnemyHit hurtbox.
+-- Shared locomotion helpers here; typed behaviors come later (Prompt 2).
 
 require "scripts.actor"
 local physics = require "scripts.physics"
@@ -8,15 +9,30 @@ setmetatable(enemy, { __index = actor })
 
 local DEFAULT_HIT_W = 14
 local DEFAULT_HIT_H = 14
+local DEFAULT_SPEED = 70
+local CHASE_STOP_DISTANCE = 20
 
---- physicsOptions can tune resistance and the small bounded contact nudge.
-function enemy:new(x, y, physicsOptions)
+--- Normalize direction, THEN apply speed (same pattern as player.normalizedVelocity).
+local function normalizedVelocity(dx, dy, speed)
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length > 0 then
+        dx = dx / length
+        dy = dy / length
+    end
+    return dx * speed, dy * speed
+end
+
+--- options may include behavior fields (speed, type) and physics soft-contact tuning.
+function enemy:new(x, y, options)
     x = x or 200
     y = y or 150
-    physicsOptions = physicsOptions or {}
+    options = options or {}
 
     local e = actor:new(x, y, "enemy")
     setmetatable(e, { __index = enemy })
+
+    e.speed = options.speed or DEFAULT_SPEED
+    e.type = options.type or "idle"
 
     if love.filesystem.getInfo("res/images/enemy.png") then
         e.img = love.graphics.newImage("res/images/enemy.png")
@@ -38,7 +54,7 @@ function enemy:new(x, y, physicsOptions)
         hitW,
         hitH,
         2,
-        physicsOptions
+        options
     )
     e.collider:setObject(e)
 
@@ -56,9 +72,70 @@ function enemy:new(x, y, physicsOptions)
     return e
 end
 
---- Idle: keep the attack hurtbox glued to the non-impulse body.
-function enemy:update(dt)
+--- Soft-contact anchor must follow intentional AI motion every frame.
+function enemy:refreshPushAnchor()
+    self.collider.pushAnchorX, self.collider.pushAnchorY =
+        self.collider:getX(), self.collider:getY()
+end
+
+function enemy:vecToward(tx, ty)
+    local x, y = self.collider:getX(), self.collider:getY()
+    return tx - x, ty - y
+end
+
+function enemy:vecAway(tx, ty)
+    local dx, dy = self:vecToward(tx, ty)
+    return -dx, -dy
+end
+
+function enemy:moveToward(tx, ty, speed, dt)
+    speed = speed or self.speed
+    local dx, dy = self:vecToward(tx, ty)
+    local vx, vy = normalizedVelocity(dx, dy, speed)
+    vx, vy = physics.constrainEnemyMotion(self.collider, vx, vy, dt, speed)
+    self.collider:setLinearVelocity(vx, vy)
+    self:refreshPushAnchor()
     self:syncHurtbox()
+end
+
+function enemy:moveAway(tx, ty, speed, dt)
+    speed = speed or self.speed
+    local dx, dy = self:vecAway(tx, ty)
+    local vx, vy = normalizedVelocity(dx, dy, speed)
+    vx, vy = physics.constrainEnemyMotion(self.collider, vx, vy, dt, speed)
+    self.collider:setLinearVelocity(vx, vy)
+    self:refreshPushAnchor()
+    self:syncHurtbox()
+end
+
+function enemy:stop(dt)
+    -- Still separate / unstick from walls while halted so packs do not fuse on the player.
+    local x0, y0 = self.collider:getX(), self.collider:getY()
+    local vx, vy = physics.constrainEnemyMotion(self.collider, 0, 0, dt, self.speed)
+    self.collider:setLinearVelocity(vx, vy)
+    local x1, y1 = self.collider:getX(), self.collider:getY()
+    -- Refresh only when separation/unstick actually moved us; pure idle keeps the soft anchor.
+    if vx ~= 0 or vy ~= 0 or x1 ~= x0 or y1 ~= y0 then
+        self:refreshPushAnchor()
+    end
+    self:syncHurtbox()
+end
+
+--- Temporary chase for locomotion feel only. Prompt 2 replaces with typed behaviors.
+function enemy:update(dt, player)
+    if not player or not player.collider then
+        self:stop(dt)
+        return
+    end
+
+    local px, py = player.collider:getX(), player.collider:getY()
+    local dx, dy = self:vecToward(px, py)
+    local dist = math.sqrt(dx * dx + dy * dy)
+    if dist > CHASE_STOP_DISTANCE then
+        self:moveToward(px, py, self.speed, dt)
+    else
+        self:stop(dt)
+    end
 end
 
 function enemy:syncHurtbox()
