@@ -12,7 +12,7 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 - Enemies: soft barriers + `EnemyHit` sensor hurtboxes; resistance increases near their body and contact permits only a tiny, momentum-free nudge
 - Enemies can **move** via shared locomotion (`moveToward` / `moveAway` / `stop`); after intentional AI motion each frame, `pushAnchorX/Y` is refreshed to the collider so soft contact still works and AI is not yanked back to spawn
 - Four enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper**, **ranger** — polished locomotion plus the ranger's cornered melee response (countdown damage later)
-- **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**). Ticks down in gameplay; at 0 → **EXTRACTED** (input/AI frozen). **H** debug-damages **3s**. Real enemy → timer drain not wired yet
+- **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**) with a thin **PLAGUE TOLERANCE** fuse under the digits (same resource). Damage flash + floating `-Xs` via `damagePulse`. Low-time edge tint. At 0 → **EXTRACTED**. **H** debug-damages **3s**. Real enemy → timer drain not wired yet
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
 - STI / full animations / combat damage→timer: not wired yet
 
@@ -114,7 +114,8 @@ Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:
 
 - Module: `scripts/countdown.lua`, owned by gameplay as `state.countdown`.
 - **Default duration: 90 seconds** (jam feel; tune ~60–120).
-- Display: large **top-center** readout (`M:SS`, or tenths when under 10s). No separate HP bar / plague meter widget.
+- Display: large **top-center** clock (`M:SS`, tenths under 10s) + thin segmented **PLAGUE TOLERANCE** fuse (width = `getRatio()`, same color family — not a heart HP bar).
+- Feedback: `:damage()` sets `damagePulse` (~0.4s) — digit/fuse flash + floating `-Xs`. Ratio < 0.15 → subtle screen-edge tint.
 - Urgency: warmer tint below 25% remaining; subtle pulse below 10%.
 - **Debug:** press **H** to call `countdown:damage(3)` (~3 seconds). Console: `[countdown] damage 3.0 → X.Xs left`.
 - At 0: `state.extracted = true`, show **EXTRACTED**, freeze player/enemy AI; Esc still quits.
