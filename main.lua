@@ -149,7 +149,7 @@ function state:drawHud()
             64
         )
 
-        local counts = { chaser = 0, fleer = 0, keeper = 0 }
+        local counts = { chaser = 0, fleer = 0, keeper = 0, ranger = 0 }
         local nearest = nil
         local px, py = playerActor.pos.x, playerActor.pos.y
         for _, actor in ipairs(self.actors) do
@@ -167,10 +167,11 @@ function state:drawHud()
         end
         love.graphics.print(
             string.format(
-                "enemies C:%d F:%d K:%d | nearest: %s",
+                "enemies C:%d F:%d K:%d R:%d | nearest: %s",
                 counts.chaser,
                 counts.fleer,
                 counts.keeper,
+                counts.ranger,
                 nearest and string.format("%.1f", nearest) or "-"
             ),
             10,
@@ -191,9 +192,12 @@ function love.load()
     local trailFront = slashTrail:new(playerActor, false)
     -- Inside stub arena (center ~200,150); clear of interior wall blocks.
     local enemies = {
-        enemy:new(120, 100),
-        enemy:new(280, 100),
-        enemy:new(120, 200),
+        enemy:new(120, 100, { type = "chaser" }),
+        enemy:new(280, 100, { type = "chaser" }),
+        enemy:new(120, 200, { type = "fleer" }),
+        enemy:new(315, 120, { type = "keeper" }),
+        -- Purple ranger starts behind the lower block so its LOS strafe is visible.
+        enemy:new(280, 200, { type = "ranger" }),
     }
     cam = camera(playerActor.pos.x, playerActor.pos.y, zoom)
 

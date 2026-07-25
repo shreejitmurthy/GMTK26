@@ -11,8 +11,8 @@ Top-down hack-and-slash jam game. **Countdown timer is health** (damage later dr
 - Slash trail (`scripts/slash_trail.lua`): procedural fading ribbon generated from the sword's hilt/tip pose and split across behind/front player layers
 - Enemies: soft barriers + `EnemyHit` sensor hurtboxes; resistance increases near their body and contact permits only a tiny, momentum-free nudge
 - Enemies can **move** via shared locomotion (`moveToward` / `moveAway` / `stop`); after intentional AI motion each frame, `pushAnchorX/Y` is refreshed to the collider so soft contact still works and AI is not yanked back to spawn
-- Three enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper** — polished locomotion (separation, hysteresis, safe spawns; art / attacks later)
-- **F1** / backtick toggles collider debug draw (+ C/F/K type letters); **F2** re-runs console PASS/FAIL selftest
+- Four enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper**, **ranger** — polished locomotion (separation, hysteresis, safe spawns; art / attacks later)
+- **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
 - STI / full animations / damage / countdown UI: not wired yet
 
 Physics loop: input → normalize → `setLinearVelocity` → swing pose + sync sensors → `world:update(dt)` → hit enter poll → sync draw/camera from collider.
@@ -85,11 +85,12 @@ enemy:new(x, y, {
 
 | Type | Behavior | Default tunables |
 |---|---|---|
-| `chaser` | Chase when `distance <= aggroRange`; stop inside `stopDistance` (+ deadzone hysteresis); idle outside aggro | speed 75, aggroRange 140, stopDistance 28, stopDeadzone 6 |
+| `chaser` | Chase when `distance <= aggroRange`; spread out while holding inside `stopDistance` (+ deadzone hysteresis); idle outside aggro | speed 75, aggroRange 140, stopDistance 28, stopDeadzone 6, separationDistance 28, separationSpeed 24 |
 | `fleer` | Run away when `distance <= fleeRange` (+ fleeDeadzone hysteresis); idle farther out; never chases | speed 95, fleeRange 90, fleeDeadzone 10 |
 | `keeper` | Hold ring at `preferredDistance ± band` while in `aggroRange`; idle outside aggro | speed 70, aggroRange 160, preferredDistance 70, band 18 |
+| `ranger` | Never closes distance; chooses a clear position outside its safe range and circles walls until it reaches that LOS position | speed 65, aggroRange 190, safeDistance 95, safeDeadzone 12, losDistanceBuffer 10 |
 
-Placeholder draw colors differ per type; F1/DEBUG shows a tiny **C** / **F** / **K** above each enemy. Art assets and enemy attacks still later.
+Placeholder draw colors differ per type; the ranger is purple. F1/DEBUG shows a tiny **C** / **F** / **K** / **R** above each enemy. Art assets and enemy attacks still later.
 
 **Soft-anchor rule:** when an enemy intentionally moves, every frame after setting motion set `collider.pushAnchorX/Y` to the current collider position (via `enemy:refreshPushAnchor`).
 
@@ -97,9 +98,9 @@ Placeholder draw colors differ per type; F1/DEBUG shows a tiny **C** / **F** / *
 Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:new(x, y, { type=..., speed=..., ... })`.
 
 - **Speeds / ranges:** raise `speed` for snappier pressure; widen `aggroRange` / `fleeRange` so types engage sooner; grow `stopDistance` / `band` / `*Deadzone` if you see vibrate at equilibrium.
-- **Pack spacing:** `physics.enemyMinSep` (~18) — light lateral push while moving so blobs don't stack. Idle enemies hard-zero velocity (no drift).
+- **Pack spacing:** `physics.enemyMinSep` (~28) — light lateral avoidance while moving so blobs don't stack. Chasers also shuffle apart at low speed while holding near the player; enemies outside their active behavior still hard-zero velocity (no drift).
 - **Spawns:** `physics.pickSpawnPoint` places enemies inside arena bounds away from walls/player.
-- **Known non-goals:** no pathfinding around interior blocks (sliding along walls via velocity is OK); no enemy attacks/damage/art yet.
+- **Known non-goals:** no full navigation/pathfinding around interior blocks (the ranger only strafes to restore LOS); no enemy attacks/damage/art yet.
 
 ### World update
 - Call **`world:update(dt)` every frame during gameplay** (via `physics.update`). Skipping this breaks collision and movement.

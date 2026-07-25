@@ -70,7 +70,10 @@ function selftest.run(playerActor, enemyActors)
         allOk = check("enemy locomotion helpers exist",
             type(physics.constrainEnemyMotion) == "function"
                 and type(physics.slideEnemyAgainstWalls) == "function"
-                and type(physics.applyEnemySeparation) == "function") and allOk
+                and type(physics.applyEnemySeparation) == "function"
+                and type(physics.hasLineOfSight) == "function"
+                and type(physics.lineOfSightStrafeDirection) == "function"
+                and type(physics.findLineOfSightPosition) == "function") and allOk
         allOk = check("enemy has non-bouncy soft resistance",
             nearlyEqual(sample.collider:getRestitution(), 0)
                 and sample.collider.softPadding > 0
@@ -118,7 +121,11 @@ function selftest.run(playerActor, enemyActors)
         allOk = check("enemy locomotion API exists",
             type(sample.moveToward) == "function"
                 and type(sample.moveAway) == "function"
+                and type(sample.moveInDirection) == "function"
+                and type(sample.moveWithoutApproaching) == "function"
+                and type(sample.hasLineOfSight) == "function"
                 and type(sample.stop) == "function"
+                and type(sample.holdApartFrom) == "function"
                 and type(sample.refreshPushAnchor) == "function") and allOk
 
         local cx, cy = sample.collider:getX(), sample.collider:getY()
@@ -143,29 +150,33 @@ function selftest.run(playerActor, enemyActors)
         sample:syncFromCollider()
     end
 
-    -- Typed enemies: chaser / fleer / keeper present with default tunables.
+    -- Typed enemies: chaser / fleer / keeper / ranger present with defaults.
     local byType = {}
     for _, e in ipairs(enemyActors) do
         if e.enemyType then
             byType[e.enemyType] = e
         end
     end
-    allOk = check("spawned enemy types include chaser, fleer, keeper",
-        byType.chaser and byType.fleer and byType.keeper,
-        string.format("chaser=%s fleer=%s keeper=%s",
+    allOk = check("spawned enemy types include chaser, fleer, keeper, ranger",
+        byType.chaser and byType.fleer and byType.keeper and byType.ranger,
+        string.format("chaser=%s fleer=%s keeper=%s ranger=%s",
             tostring(byType.chaser ~= nil),
             tostring(byType.fleer ~= nil),
-            tostring(byType.keeper ~= nil))) and allOk
+            tostring(byType.keeper ~= nil),
+            tostring(byType.ranger ~= nil))) and allOk
 
     if byType.chaser then
         local c = byType.chaser
         allOk = check("chaser default fields",
             nearlyEqual(c.speed, 75) and nearlyEqual(c.aggroRange, 140)
                 and nearlyEqual(c.stopDistance, 28)
-                and nearlyEqual(c.stopDeadzone, 6),
-            string.format("speed=%.0f aggro=%.0f stop=%.0f dead=%.0f",
+                and nearlyEqual(c.stopDeadzone, 6)
+                and nearlyEqual(c.separationDistance, 28)
+                and nearlyEqual(c.separationSpeed, 24),
+            string.format("speed=%.0f aggro=%.0f stop=%.0f dead=%.0f sep=%.0f@%.0f",
                 c.speed or -1, c.aggroRange or -1,
-                c.stopDistance or -1, c.stopDeadzone or -1)) and allOk
+                c.stopDistance or -1, c.stopDeadzone or -1,
+                c.separationDistance or -1, c.separationSpeed or -1)) and allOk
     end
     if byType.fleer then
         local f = byType.fleer
@@ -183,6 +194,122 @@ function selftest.run(playerActor, enemyActors)
             string.format("speed=%.0f aggro=%.0f pref=%.0f band=%.0f",
                 k.speed or -1, k.aggroRange or -1,
                 k.preferredDistance or -1, k.band or -1)) and allOk
+    end
+    if byType.ranger then
+        local r = byType.ranger
+        allOk = check("ranger default fields",
+            nearlyEqual(r.speed, 65) and nearlyEqual(r.aggroRange, 190)
+                and nearlyEqual(r.safeDistance, 95)
+                and nearlyEqual(r.safeDeadzone, 12)
+                and nearlyEqual(r.losDistanceBuffer, 10)
+                and nearlyEqual(r.losGoalTolerance, 7)
+                and nearlyEqual(r.losProbeDistance, 32)
+                and nearlyEqual(r.losRetreatWeight, 0.65)
+                and r.debugLetter == "R",
+            string.format("speed=%.0f aggro=%.0f safe=%.0f dead=%.0f buffer=%.0f",
+                r.speed or -1, r.aggroRange or -1,
+                r.safeDistance or -1, r.safeDeadzone or -1,
+                r.losDistanceBuffer or -1)) and allOk
+
+        local clearLOS = physics.hasLineOfSight(120, 150, 180, 150)
+        local blockedLOS = physics.hasLineOfSight(200, 60, 200, 150)
+        allOk = check("wall-aware line of sight",
+            clearLOS and not blockedLOS,
+            string.format("clear=%s blocked=%s",
+                tostring(clearLOS), tostring(blockedLOS))) and allOk
+
+        -- Put the ranger above the vertical test block: it is too close and
+        -- occluded, so its chosen velocity must restore LOS without closing in.
+        local rx, ry = r.collider:getX(), r.collider:getY()
+        r.collider:setPosition(200, 60)
+        r:update(1 / 60, playerActor)
+        local vx, vy = r.collider:getLinearVelocity()
+        local towardX, towardY = 0, 90
+        local closingSpeed = vx * towardX + vy * towardY
+        local moving = math.sqrt(vx * vx + vy * vy)
+        allOk = check("ranger retreats while restoring LOS",
+            r.hasPlayerLOS == false and moving > 0.01 and closingSpeed <= 0,
+            string.format("los=%s vel=%.1f,%.1f closingDot=%.1f",
+                tostring(r.hasPlayerLOS), vx, vy, closingSpeed)) and allOk
+
+        -- Exercise the real collider/world loop from the ranger's blocked demo
+        -- spawn and confirm that its strafe actually clears the obstruction.
+        r.collider:setPosition(rx, ry)
+        r:refreshPushAnchor()
+        r._backingAway = false
+        r._losGoalX, r._losGoalY = nil, nil
+        r._repositioningForLOS = false
+        r.hasPlayerLOS = nil
+        r:stop()
+        r:syncFromCollider()
+        local px, py = playerActor.collider:getX(), playerActor.collider:getY()
+        local startDX, startDY = rx - px, ry - py
+        local startDistance = math.sqrt(startDX * startDX + startDY * startDY)
+        local minDistance = startDistance
+        local retainedLOS = r:hasLineOfSight(px, py)
+        local settledAtLOSPosition = false
+        for _ = 1, 300 do
+            if settledAtLOSPosition then
+                break
+            end
+            r:update(1 / 60, playerActor)
+            physics.update(1 / 60)
+            r:syncFromCollider()
+            local dx = r.collider:getX() - px
+            local dy = r.collider:getY() - py
+            local currentDistance = math.sqrt(dx * dx + dy * dy)
+            minDistance = math.min(minDistance, currentDistance)
+            retainedLOS = r:hasLineOfSight(px, py)
+            local currentVX, currentVY = r.collider:getLinearVelocity()
+            local currentSpeed = math.sqrt(
+                currentVX * currentVX + currentVY * currentVY
+            )
+            settledAtLOSPosition = retainedLOS
+                and currentDistance >= r.safeDistance
+                and not r._repositioningForLOS
+                and currentSpeed < 0.01
+        end
+        local finalDX = r.collider:getX() - px
+        local finalDY = r.collider:getY() - py
+        local finalDistance = math.sqrt(finalDX * finalDX + finalDY * finalDY)
+        local heldLOSFrames = 0
+        if settledAtLOSPosition then
+            for _ = 1, 60 do
+                r:update(1 / 60, playerActor)
+                physics.update(1 / 60)
+                r:syncFromCollider()
+                local holdDX = r.collider:getX() - px
+                local holdDY = r.collider:getY() - py
+                local holdDistance = math.sqrt(
+                    holdDX * holdDX + holdDY * holdDY
+                )
+                if r:hasLineOfSight(px, py)
+                    and holdDistance >= r.safeDistance
+                then
+                    heldLOSFrames = heldLOSFrames + 1
+                end
+            end
+        end
+        allOk = check("ranger settles at a safe LOS position",
+            settledAtLOSPosition
+                and retainedLOS
+                and finalDistance >= r.safeDistance
+                and minDistance >= startDistance - 0.5,
+            string.format("settled=%s los=%s start=%.1f nearest=%.1f final=%.1f",
+                tostring(settledAtLOSPosition), tostring(retainedLOS),
+                startDistance, minDistance, finalDistance)) and allOk
+        allOk = check("ranger retains LOS after settling",
+            heldLOSFrames == 60,
+            string.format("held=%d/60 frames", heldLOSFrames)) and allOk
+
+        r.collider:setPosition(rx, ry)
+        r:refreshPushAnchor()
+        r._backingAway = false
+        r._losGoalX, r._losGoalY = nil, nil
+        r._repositioningForLOS = false
+        r.hasPlayerLOS = nil
+        r:stop()
+        r:syncFromCollider()
     end
 
     allOk = check("pickSpawnPoint helper exists",

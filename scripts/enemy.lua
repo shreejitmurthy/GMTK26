@@ -1,5 +1,5 @@
 -- Enemy: Windfield collider owns position; soft barrier + EnemyHit hurtbox.
--- Shared locomotion + typed AI (chaser / fleer / keeper).
+-- Shared locomotion + typed AI (chaser / fleer / keeper / ranger).
 
 require "scripts.actor"
 local physics = require "scripts.physics"
@@ -22,7 +22,7 @@ local function normalizedVelocity(dx, dy, speed)
     return dx * speed, dy * speed
 end
 
---- options: { type = "chaser"|"fleer"|"keeper", AI overrides..., physics soft-contact... }
+--- options: { type = "chaser"|"fleer"|"keeper"|"ranger", AI overrides..., physics soft-contact... }
 function enemy:new(x, y, options)
     x = x or 200
     y = y or 150
@@ -58,6 +58,8 @@ function enemy:new(x, y, options)
         options
     )
     e.collider:setObject(e)
+    e.collider.separationDistance = e.separationDistance
+    e.collider.separationSpeed = e.separationSpeed
 
     -- This separate sensor follows the pushable body and handles attacks.
     e.hurtW = hitW
@@ -122,10 +124,76 @@ function enemy:moveAway(tx, ty, speed, dt)
     self:applyVelocity(vx, vy)
 end
 
+function enemy:moveInDirection(dx, dy, speed, dt)
+    speed = speed or self.speed
+    local vx, vy = normalizedVelocity(dx, dy, speed)
+    vx, vy = physics.constrainEnemyMotion(self.collider, vx, vy, dt, speed)
+    self:applyVelocity(vx, vy)
+end
+
+--- Apply steering while guaranteeing that neighbour avoidance cannot turn a
+--- retreat/reposition command into motion toward the protected target.
+function enemy:moveWithoutApproaching(tx, ty, dx, dy, speed, dt)
+    speed = speed or self.speed
+    local vx, vy = normalizedVelocity(dx, dy, speed)
+    vx, vy = physics.constrainEnemyMotion(self.collider, vx, vy, dt, speed)
+
+    local towardX, towardY = self:vecToward(tx, ty)
+    local targetDistance = math.sqrt(towardX * towardX + towardY * towardY)
+    if targetDistance > 0 then
+        towardX, towardY = towardX / targetDistance, towardY / targetDistance
+        local closingSpeed = vx * towardX + vy * towardY
+        if closingSpeed > 0 then
+            vx = vx - towardX * closingSpeed
+            vy = vy - towardY * closingSpeed
+        end
+    end
+    self:applyVelocity(vx, vy)
+end
+
+function enemy:hasLineOfSight(tx, ty)
+    return physics.hasLineOfSight(
+        self.collider:getX(),
+        self.collider:getY(),
+        tx,
+        ty
+    )
+end
+
 --- Hard idle: zero kinematic velocity every idle frame (no separation drift).
 function enemy:stop(dt)
     self.collider:setLinearVelocity(0, 0)
     self:syncHurtbox()
+end
+
+--- While holding near a target, use separation as a low-speed shuffle. Remove
+--- motion toward the target so spreading cannot squeeze the player more tightly.
+function enemy:holdApartFrom(tx, ty, dt)
+    local vx, vy = physics.applyEnemySeparation(
+        self.collider,
+        0,
+        0,
+        self.separationDistance,
+        self.separationSpeed
+    )
+    local dx, dy = self:vecToward(tx, ty)
+    local distance = math.sqrt(dx * dx + dy * dy)
+    if distance > 0 then
+        local towardX, towardY = dx / distance, dy / distance
+        local towardSpeed = vx * towardX + vy * towardY
+        if towardSpeed > 0 then
+            vx = vx - towardX * towardSpeed
+            vy = vy - towardY * towardSpeed
+        end
+    end
+
+    local speed = math.sqrt(vx * vx + vy * vy)
+    local maxSpeed = self.separationSpeed or 0
+    if maxSpeed > 0 and speed > maxSpeed then
+        vx, vy = vx / speed * maxSpeed, vy / speed * maxSpeed
+    end
+    vx, vy = physics.slideEnemyAgainstWalls(self.collider, vx, vy, dt)
+    self:applyVelocity(vx, vy)
 end
 
 --- Hook for player sword hits. No HP/damage yet — flash only.

@@ -107,6 +107,8 @@ function physics.newEnemyCollider(x, y, w, h, corner, options)
     collider.pushAnchorY = collider:getY()
     collider.maxPushDistance = math.max(0, options.maxPushDistance or 3)
     collider.pushSpeed = math.max(0, options.pushSpeed or 6)
+    -- Stable IDs make head-on avoidance deterministic instead of jittering sides.
+    collider.separationId = #physics.enemies + 1
     physics.enemies[#physics.enemies + 1] = collider
     return collider
 end
@@ -210,6 +212,139 @@ local function enemyHitsWallAt(enemyCollider, cx, cy)
     return #hits > 0
 end
 
+--- True when no solid Wall collider blocks the segment between two points.
+function physics.hasLineOfSight(x1, y1, x2, y2)
+    if not physics.world then
+        return false
+    end
+    local blockers = physics.world:queryLine(x1, y1, x2, y2, { "Wall" })
+    return #blockers == 0
+end
+
+--- Pick a stable tangent around the player for an enemy trying to restore LOS.
+--- Prefer a probe position that already has sight; otherwise keep moving along
+--- an open side until the wall edge is cleared.
+function physics.lineOfSightStrafeDirection(
+    enemyCollider,
+    targetX,
+    targetY,
+    preferredSide,
+    probeDistance
+)
+    local x, y = enemyCollider:getX(), enemyCollider:getY()
+    local dx, dy = targetX - x, targetY - y
+    local distance = math.sqrt(dx * dx + dy * dy)
+    if distance < 0.001 then
+        return 0, 0, preferredSide or 1
+    end
+
+    local leftX, leftY = -dy / distance, dx / distance
+    if preferredSide ~= -1 and preferredSide ~= 1 then
+        preferredSide = ((enemyCollider.separationId or 1) % 2 == 0) and 1 or -1
+    end
+    probeDistance = probeDistance or 32
+
+    local sides = { preferredSide, -preferredSide }
+    local fallbackSide = nil
+    for _, side in ipairs(sides) do
+        local probeX = x + leftX * side * probeDistance
+        local probeY = y + leftY * side * probeDistance
+        if not enemyHitsWallAt(enemyCollider, probeX, probeY) then
+            if physics.hasLineOfSight(probeX, probeY, targetX, targetY) then
+                return leftX * side, leftY * side, side
+            end
+            fallbackSide = fallbackSide or side
+        end
+    end
+
+    local side = fallbackSide or preferredSide
+    return leftX * side, leftY * side, side
+end
+
+--- Find a visible tactical point on a ring around the target. The ring never
+--- comes closer than minDistance and never shrinks the enemy's current radius.
+--- One extra visible angular step gives the final position some LOS clearance,
+--- rather than stopping on the exact edge of a wall.
+function physics.findLineOfSightPosition(
+    enemyCollider,
+    targetX,
+    targetY,
+    minDistance,
+    preferredSide
+)
+    local x, y = enemyCollider:getX(), enemyCollider:getY()
+    local radialX, radialY = x - targetX, y - targetY
+    local currentDistance = math.sqrt(radialX * radialX + radialY * radialY)
+    if currentDistance < 0.001 then
+        radialX, radialY, currentDistance = 1, 0, 1
+    end
+    radialX, radialY = radialX / currentDistance, radialY / currentDistance
+
+    if preferredSide ~= -1 and preferredSide ~= 1 then
+        preferredSide = ((enemyCollider.separationId or 1) % 2 == 0) and 1 or -1
+    end
+
+    local radius = math.max(minDistance or 0, currentDistance)
+    local angleStep = math.rad(12)
+    local maxSteps = 15
+    local clearanceSteps = 1
+
+    local function candidate(side, step)
+        local angle = angleStep * step * side
+        local cosA, sinA = math.cos(angle), math.sin(angle)
+        local dirX = radialX * cosA - radialY * sinA
+        local dirY = radialX * sinA + radialY * cosA
+        return targetX + dirX * radius, targetY + dirY * radius
+    end
+
+    local function visibleCandidate(side, step)
+        local candidateX, candidateY = candidate(side, step)
+        if enemyHitsWallAt(enemyCollider, candidateX, candidateY) then
+            return nil
+        end
+        if not physics.hasLineOfSight(candidateX, candidateY, targetX, targetY) then
+            return nil
+        end
+        return candidateX, candidateY
+    end
+
+    local results = {}
+    local sides = { preferredSide, -preferredSide }
+    for _, side in ipairs(sides) do
+        for step = 1, maxSteps do
+            local candidateX, candidateY = visibleCandidate(side, step)
+            if candidateX then
+                local goalX, goalY = candidateX, candidateY
+                for extra = 1, clearanceSteps do
+                    local clearX, clearY = visibleCandidate(side, step + extra)
+                    if not clearX then
+                        break
+                    end
+                    goalX, goalY = clearX, clearY
+                end
+                results[#results + 1] = {
+                    x = goalX,
+                    y = goalY,
+                    side = side,
+                    entryStep = step,
+                }
+                break
+            end
+        end
+    end
+
+    if #results == 0 then
+        return nil
+    end
+    table.sort(results, function(a, b)
+        if a.entryStep == b.entryStep then
+            return a.side == preferredSide
+        end
+        return a.entryStep < b.entryStep
+    end)
+    return results[1].x, results[1].y, results[1].side
+end
+
 --- Zero velocity into walls (kinematic bodies do not resolve vs static Wall).
 function physics.slideEnemyAgainstWalls(enemyCollider, vx, vy, dt)
     dt = dt or (1 / 60)
@@ -246,35 +381,78 @@ function physics.slideEnemyAgainstWalls(enemyCollider, vx, vy, dt)
     return vx, vy
 end
 
--- Light pack spacing: only when centers are closer than minSep.
-physics.enemyMinSep = 18
+-- Light pack spacing: a little wider than the 14px placeholder enemy body.
+physics.enemyMinSep = 28
 
---- Add a small lateral push-apart into AI velocity (caller re-normalizes).
-function physics.applyEnemySeparation(enemyCollider, vx, vy, minSep)
+local function deterministicPairSide(a, b)
+    local aId = a.separationId or 0
+    local bId = b.separationId or 0
+    return ((aId + bId) % 2 == 0) and 1 or -1
+end
+
+local function overlapDirection(a, b)
+    local aId = a.separationId or 0
+    local bId = b.separationId or 0
+    local lowId = math.min(aId, bId)
+    local highId = math.max(aId, bId)
+    local angle = (lowId * 2.399963 + highId * 0.618034) % (math.pi * 2)
+    local sign = aId <= bId and 1 or -1
+    return math.cos(angle) * sign, math.sin(angle) * sign
+end
+
+--- Add a small push-apart into AI velocity. When another enemy is directly in
+--- the way, turn most of that push sideways so chargers flow around the pack.
+function physics.applyEnemySeparation(enemyCollider, vx, vy, minSep, separationSpeed)
     minSep = minSep or physics.enemyMinSep
     local x, y = enemyCollider:getX(), enemyCollider:getY()
     local sepX, sepY = 0, 0
+    local inputSpeed = math.sqrt(vx * vx + vy * vy)
+    local dirX, dirY, leftX, leftY
+    if inputSpeed > 0.01 then
+        dirX, dirY = vx / inputSpeed, vy / inputSpeed
+        leftX, leftY = -dirY, dirX
+    end
 
     for _, other in ipairs(physics.enemies) do
         if other ~= enemyCollider and not other:isDestroyed() then
             local ox, oy = other:getX(), other:getY()
             local dx, dy = x - ox, y - oy
             local dist = math.sqrt(dx * dx + dy * dy)
-            if dist > 0 and dist < minSep then
+            if dist < minSep then
                 local weight = (minSep - dist) / minSep
-                sepX = sepX + (dx / dist) * weight
-                sepY = sepY + (dy / dist) * weight
-            elseif dist == 0 then
-                sepX = sepX + 1
+                local awayX, awayY
+                if dist > 0.001 then
+                    awayX, awayY = dx / dist, dy / dist
+                else
+                    awayX, awayY = overlapDirection(enemyCollider, other)
+                end
+
+                -- A directly-ahead neighbour would otherwise make the follower
+                -- keep pushing straight into it after the final speed clamp.
+                if dirX and awayX * dirX + awayY * dirY < -0.7 then
+                    local lateral = awayX * leftX + awayY * leftY
+                    local side
+                    if math.abs(lateral) > 0.05 then
+                        side = lateral > 0 and 1 or -1
+                    else
+                        side = deterministicPairSide(enemyCollider, other)
+                    end
+                    awayX = awayX * 0.35 + leftX * side * 0.65
+                    awayY = awayY * 0.35 + leftY * side * 0.65
+                    local awayLength = math.sqrt(awayX * awayX + awayY * awayY)
+                    awayX, awayY = awayX / awayLength, awayY / awayLength
+                end
+
+                sepX = sepX + awayX * weight
+                sepY = sepY + awayY * weight
             end
         end
     end
 
     local sepLen = math.sqrt(sepX * sepX + sepY * sepY)
     if sepLen > 0 then
-        local speed = math.sqrt(vx * vx + vy * vy)
         -- Keep separation light so packs spread without dominating chase/flee intent.
-        local sepBoost = math.max(30, speed) * 0.4
+        local sepBoost = separationSpeed or math.max(30, inputSpeed) * 0.4
         vx = vx + (sepX / sepLen) * sepBoost * math.min(1, sepLen)
         vy = vy + (sepY / sepLen) * sepBoost * math.min(1, sepLen)
     end
@@ -290,7 +468,13 @@ function physics.constrainEnemyMotion(enemyCollider, vx, vy, dt, maxSpeed)
         return 0, 0
     end
 
-    vx, vy = physics.applyEnemySeparation(enemyCollider, vx, vy)
+    vx, vy = physics.applyEnemySeparation(
+        enemyCollider,
+        vx,
+        vy,
+        enemyCollider.separationDistance,
+        enemyCollider.separationSpeed
+    )
     if maxSpeed and maxSpeed > 0 then
         local speed = math.sqrt(vx * vx + vy * vy)
         if speed > 0 then
