@@ -480,7 +480,7 @@ return {
           width = 32,
           height = 32,
           properties = {
-            cleanseRadius = 72,
+            cleanseRadius = 36,
             district = "Ash Market",
             nest = "a"
           },
@@ -497,7 +497,7 @@ return {
           width = 32,
           height = 32,
           properties = {
-            cleanseRadius = 80,
+            cleanseRadius = 36,
             district = "Plague Well",
             nest = "b"
           },
@@ -514,7 +514,7 @@ return {
           width = 32,
           height = 32,
           properties = {
-            cleanseRadius = 72,
+            cleanseRadius = 40,
             district = "Watch Yard",
             nest = "c"
           },

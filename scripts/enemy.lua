@@ -10,6 +10,7 @@ setmetatable(enemy, { __index = actor })
 
 local DEFAULT_HIT_W = 14
 local DEFAULT_HIT_H = 14
+local DEFAULT_HP = 2
 local HURT_FLASH_DURATION = 0.15
 local ATTACK_FLASH_DURATION = 0.12
 
@@ -38,6 +39,9 @@ function enemy:new(x, y, options)
     e.attackFlash = 0
     e.attackCooldownTimer = 0
     e.attackSerial = 0
+    e.hp = options.hp or DEFAULT_HP
+    e.maxHp = e.hp
+    e.dead = false
 
     if love.filesystem.getInfo("res/images/enemy.png") then
         e.img = love.graphics.newImage("res/images/enemy.png")
@@ -211,17 +215,46 @@ function enemy:holdApartFrom(tx, ty, dt)
     self:applyVelocity(vx, vy)
 end
 
---- Hook for player sword hits. No HP/damage yet — flash only.
+--- Destroy physics bodies and mark dead (state removes from actors).
+function enemy:die()
+    if self.dead then
+        return
+    end
+    self.dead = true
+    self.wantsMeleeAttack = false
+    if self.collider then
+        physics.removeEnemyCollider(self.collider)
+        self.collider:destroy()
+        self.collider = nil
+    end
+    if self.hurtbox then
+        self.hurtbox:destroy()
+        self.hurtbox = nil
+    end
+end
+
+--- Hook for player sword hits. Simple HP: 2 hits → kill → +1s via state.
 function enemy:onHitByPlayer()
+    if self.dead then
+        return
+    end
     local ex, ey = self.pos.x, self.pos.y
+    self.hp = (self.hp or DEFAULT_HP) - 1
+    self.hurtFlash = HURT_FLASH_DURATION
     print(string.format(
-        "[hit] PlayerAttack hit %s (%s @ %.1f, %.1f)",
+        "[hit] PlayerAttack hit %s (%s @ %.1f, %.1f) hp=%d",
         self.enemyType or "enemy",
         self.label or "enemy",
         ex,
-        ey
+        ey,
+        self.hp
     ))
-    self.hurtFlash = HURT_FLASH_DURATION
+    if self.hp <= 0 then
+        self:die()
+        if state and state.onEnemyKilled then
+            state:onEnemyKilled(self)
+        end
+    end
 end
 
 --- Close-range attack hook → player:onHitByEnemy → state:applyPlayerDamage.
@@ -259,6 +292,9 @@ function enemy:tryAttack(dt, player)
 end
 
 function enemy:update(dt, player)
+    if self.dead then
+        return
+    end
     if self.hurtFlash and self.hurtFlash > 0 then
         self.hurtFlash = math.max(0, self.hurtFlash - dt)
     end
@@ -267,7 +303,9 @@ function enemy:update(dt, player)
     end
     enemy_types.update(self, dt, player)
     self:tryAttack(dt, player)
-    physics.clampEnemyToPlayable(self.collider)
+    if self.collider then
+        physics.clampEnemyToPlayable(self.collider)
+    end
     self:syncHurtbox()
 end
 
@@ -287,6 +325,9 @@ function enemy:syncFromCollider()
 end
 
 function enemy:draw()
+    if self.dead then
+        return
+    end
     local flashing = self.hurtFlash and self.hurtFlash > 0
     local attacking = self.attackFlash and self.attackFlash > 0
     if self.img then

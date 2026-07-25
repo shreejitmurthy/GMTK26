@@ -114,6 +114,18 @@ function physics.newEnemyCollider(x, y, w, h, corner, options)
     return collider
 end
 
+function physics.removeEnemyCollider(collider)
+    if not collider then
+        return
+    end
+    for i = #physics.enemies, 1, -1 do
+        if physics.enemies[i] == collider then
+            table.remove(physics.enemies, i)
+            break
+        end
+    end
+end
+
 --- Remove only the velocity component aimed into a soft collider.
 --- strength 0 leaves velocity unchanged; strength 1 fully blocks inward motion.
 function physics.resistInwardVelocity(vx, vy, nx, ny, strength)

@@ -491,11 +491,48 @@ function selftest.run(playerActor, enemyActors)
     allOk = check("countdown damage clamps at 0",
         nearlyEqual(cd:getRemaining(), 0) and cd:isExpired(),
         string.format("got %.2f expired=%s", cd:getRemaining(), tostring(cd:isExpired()))) and allOk
+    local cd2 = countdown.new({ duration = 10 })
+    cd2:damage(4)
+    cd2:addTime(2)
+    allOk = check("countdown addTime refunds seconds",
+        nearlyEqual(cd2:getRemaining(), 8),
+        string.format("got %.2f", cd2:getRemaining())) and allOk
+    cd2:addTime(100)
+    allOk = check("countdown addTime clamps to duration",
+        nearlyEqual(cd2:getRemaining(), 10),
+        string.format("got %.2f", cd2:getRemaining())) and allOk
     allOk = check("player hit damage / iframe tunables",
         nearlyEqual(player.HIT_DAMAGE_SECONDS, 5)
             and nearlyEqual(player.HURT_IFRAME, 0.6),
         string.format("dmg=%.1f iframe=%.1f",
             player.HIT_DAMAGE_SECONDS, player.HURT_IFRAME)) and allOk
+
+    local nestsMod = require "scripts.nests"
+    allOk = check("nest cleanse constants",
+        nearlyEqual(nestsMod.CLEANSE_SECONDS, 2)
+            and nearlyEqual(nestsMod.CLEANSE_START_COST_SECONDS, 2)
+            and nestsMod.CLEANSE_HOLD_KEY == "e",
+        string.format("cleanse=%.1f cost=%.1f key=%s",
+            nestsMod.CLEANSE_SECONDS, nestsMod.CLEANSE_START_COST_SECONDS,
+            tostring(nestsMod.CLEANSE_HOLD_KEY))) and allOk
+    if state and state.nests then
+        allOk = check("nests loaded from map (3)",
+            #state.nests == 3,
+            string.format("count=%d", #state.nests)) and allOk
+        local maxR = 0
+        for _, nest in ipairs(state.nests) do
+            maxR = math.max(maxR, nest.radius or 0)
+        end
+        allOk = check("nest cleanse radii are tight (<=40)",
+            maxR <= 40,
+            string.format("maxR=%.0f", maxR)) and allOk
+    end
+    local sampleEnemy = enemyActors and enemyActors[1]
+    if sampleEnemy then
+        allOk = check("enemy has hp for kill→+1s loop",
+            (sampleEnemy.hp or 0) >= 1,
+            string.format("hp=%s", tostring(sampleEnemy.hp))) and allOk
+    end
 
     print(allOk and "[physics_selftest] ALL PASS" or "[physics_selftest] SOME FAILED")
     return allOk

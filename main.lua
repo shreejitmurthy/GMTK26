@@ -9,6 +9,7 @@ local physics = require "scripts.physics"
 local countdown = require "scripts.countdown"
 local game_map = require "scripts.game_map"
 local atmosphere = require "scripts.atmosphere"
+local nests = require "scripts.nests"
 require "scripts.player"
 require "scripts.sword"
 require "scripts.slash_trail"
@@ -36,6 +37,10 @@ state = {
     gameState = GAME_STATE.GAMEPLAY,
     countdown = nil,
     extracted = false,
+    sectorCleared = false,
+    nests = nil,
+    floats = {},
+    hintTime = 4,
     hudTimerFont = nil,
     hudLabelFont = nil,
     hudHelpFont = nil,
@@ -60,12 +65,72 @@ function state:getActor(label)
     return nil
 end
 
+function state:pushFloat(text, x, y, r, g, b, life)
+    self.floats[#self.floats + 1] = {
+        text = text,
+        x = x,
+        y = y,
+        r = r or 1,
+        g = g or 1,
+        b = b or 1,
+        life = life or 0.9,
+        maxLife = life or 0.9,
+        world = true,
+    }
+end
+
+function state:removeActor(target)
+    for i = #self.actors, 1, -1 do
+        if self.actors[i] == target then
+            table.remove(self.actors, i)
+            break
+        end
+    end
+end
+
+function state:onEnemyKilled(enemyActor)
+    if self.extracted or self.sectorCleared or not self.countdown then
+        self:removeActor(enemyActor)
+        return
+    end
+    self.countdown:addTime(1)
+    local px, py = enemyActor.pos.x, enemyActor.pos.y - 10
+    local playerActor = self:getActor("player")
+    if playerActor then
+        px, py = playerActor.pos.x, playerActor.pos.y - 14
+    end
+    self:pushFloat("+1s", px, py, 0.45, 0.95, 0.55, 0.85)
+    print(string.format(
+        "[countdown] +1s from kill → %.1fs left",
+        self.countdown:getRemaining()
+    ))
+    self:removeActor(enemyActor)
+end
+
+function state:onNestCleansed(nest)
+    local col = nests.color(nest.id)
+    self:pushFloat("NEST SEALED", nest.x, nest.y - 18, col[1], col[2], col[3], 1.1)
+    atmosphere.notifyNestCleansed(nest)
+    print(string.format(
+        "[nest] nest_%s sealed (%d/3)",
+        nest.id,
+        nests.countCleansed(self.nests)
+    ))
+end
+
+function state:onSectorCleared()
+    print(string.format(
+        "[nest] SECTOR CLEANSED — %.1fs remaining",
+        self.countdown and self.countdown:getRemaining() or 0
+    ))
+end
+
 --- Single gameplay entry for plague damage (timer = health).
 --- opts.bypassIFrames: debug key may ignore invuln for testing.
 --- Returns ok, remainingSeconds.
 function state:applyPlayerDamage(amount, source, opts)
     opts = opts or {}
-    if self.extracted or not self.countdown then
+    if self.extracted or self.sectorCleared or not self.countdown then
         return false, 0
     end
 
@@ -87,7 +152,7 @@ function state:applyPlayerDamage(amount, source, opts)
     if self.countdown:isExpired() then
         self.extracted = true
         self.countdown:pause()
-        print("[countdown] EXTRACTED ΓÇö plague time exhausted")
+        print("[countdown] EXTRACTED — plague time exhausted")
     end
 
     return true, self.countdown:getRemaining()
@@ -104,22 +169,39 @@ function state:update(dt)
         if self.gameMap then
             game_map.update(self.gameMap, dt)
         end
-        atmosphere.update(dt)
 
         local playerActor = self:getActor("player")
+        local frozen = self.extracted or self.sectorCleared
 
-        -- Timer-as-health: always update (pulse decays even after extract).
+        -- Timer-as-health: always update (pulse decays even after extract/clear).
         if self.countdown then
             self.countdown:update(dt)
-            if not self.extracted and self.countdown:isExpired() then
+            if not frozen and self.countdown:isExpired() then
                 self.extracted = true
+                frozen = true
                 self.countdown:pause()
-                print("[countdown] EXTRACTED ΓÇö plague time exhausted")
+                print("[countdown] EXTRACTED — plague time exhausted")
             end
         end
 
-        -- Freeze player input / enemy AI once the company pulls you out.
-        if not self.extracted then
+        local ratio = self.countdown and self.countdown:getRatio() or 1
+        atmosphere.update(dt, ratio, self.nests)
+
+        if self.hintTime and self.hintTime > 0 then
+            self.hintTime = math.max(0, self.hintTime - dt)
+        end
+
+        for i = #self.floats, 1, -1 do
+            local f = self.floats[i]
+            f.life = f.life - dt
+            f.y = f.y - 18 * dt
+            if f.life <= 0 then
+                table.remove(self.floats, i)
+            end
+        end
+
+        if not frozen then
+            nests.update(self, dt)
             for _, actor in ipairs(self.actors) do
                 if actor.label == "enemy" then
                     actor:update(dt, playerActor)
@@ -137,17 +219,16 @@ function state:update(dt)
         end
 
         physics.update(dt)
-        -- Safety net: kinematic enemies never resolve vs Wall — re-clamp every frame.
         physics.clampAllEnemiesToPlayable()
-        -- Player is blocked by boundary Walls; clamp covers tunneling / edge cases.
         if playerActor and playerActor.collider then
             physics.clampColliderToPlayable(playerActor.collider)
         end
 
-        if not self.extracted and playerActor and playerActor.pollAttackHits then
+        if not frozen and playerActor and playerActor.pollAttackHits then
             playerActor:pollAttackHits()
         end
 
+        -- Sword / trails sync from the player pose — they have no collider.
         for _, actor in ipairs(self.actors) do
             if actor.syncFromCollider then
                 actor:syncFromCollider(dt)
@@ -314,7 +395,7 @@ function state:drawHud()
         love.graphics.setColor(r, g, b, 0.55 * a)
         love.graphics.print(label, cx - lw / 2, fuseY + fuseH + 4)
 
-        -- Floating damage readout near the timer (~0.4s via damagePulse).
+        -- Floating damage / heal readout near the timer.
         if dmgPulse > 0 and dmgAmount > 0 then
             love.graphics.setFont(labelFont)
             local floatText = string.format("-%.0fs", dmgAmount)
@@ -322,9 +403,103 @@ function state:drawHud()
             love.graphics.setColor(1, 0.35, 0.28, dmgPulse)
             love.graphics.print(floatText, cx + tw * 0.42 * scale, cy + 4 - rise)
         end
+        local healPulse, healAmount = self.countdown:getHealPulse()
+        if healPulse > 0 and healAmount > 0 then
+            love.graphics.setFont(labelFont)
+            local floatText = string.format("+%.0fs", healAmount)
+            local rise = (1 - healPulse) * 18
+            love.graphics.setColor(0.45, 0.95, 0.55, healPulse)
+            love.graphics.print(floatText, cx - tw * 0.55 * scale, cy + 4 - rise)
+        end
+
+        -- Nest cleanse pips under Plague Tolerance.
+        local nestY = fuseY + fuseH + 28
+        local cleansedCount = nests.countCleansed(self.nests)
+        local nestLabel = string.format("NESTS %d/3", cleansedCount)
+        love.graphics.setFont(labelFont)
+        local nlw = labelFont:getWidth(nestLabel)
+        love.graphics.setColor(0.9, 0.86, 0.78, 0.7)
+        love.graphics.print(nestLabel, cx - nlw / 2, nestY)
+
+        local pipR = 7
+        local pipGap = 22
+        local pipStart = cx - pipGap
+        for i, id in ipairs(nests.order()) do
+            local nest = self.nests and self.nests[i]
+            local col = nests.color(id)
+            local px = pipStart + (i - 1) * pipGap
+            local py = nestY + 28
+            if nest and nest.cleansed then
+                love.graphics.setColor(col[1], col[2], col[3], 0.95)
+                love.graphics.circle("fill", px, py, pipR)
+            else
+                love.graphics.setColor(col[1], col[2], col[3], 0.25)
+                love.graphics.circle("line", px, py, pipR)
+                if nest and nest.channeling and nest.progress > 0 then
+                    love.graphics.setColor(col[1], col[2], col[3], 0.7)
+                    love.graphics.arc(
+                        "fill",
+                        px,
+                        py,
+                        pipR - 1,
+                        -math.pi / 2,
+                        -math.pi / 2 + nest.progress * math.pi * 2,
+                        16
+                    )
+                end
+            end
+        end
     end
 
-    if self.extracted then
+    if self.hintTime and self.hintTime > 0 and not self.extracted and not self.sectorCleared then
+        local alpha = math.min(1, self.hintTime / 1.2)
+        if self.hintTime > 3 then
+            alpha = math.min(1, (4 - self.hintTime) / 0.5)
+        end
+        love.graphics.setFont(self.hudHelpFont or prevFont)
+        love.graphics.setColor(0.92, 0.88, 0.78, 0.85 * alpha)
+        love.graphics.printf(
+            "Your time is your life — seal the three nests.",
+            0,
+            sh * 0.18,
+            sw,
+            "center"
+        )
+    end
+
+    -- Hold-E prompt only when standing in an uncleansed nest (not while walking past).
+    local promptNest = nests.promptNest(self.nests)
+    if promptNest and not self.extracted and not self.sectorCleared then
+        love.graphics.setFont(self.hudHelpFont or prevFont)
+        love.graphics.setColor(0.92, 0.88, 0.78, 0.8)
+        love.graphics.printf("Hold E to cleanse", 0, sh * 0.78, sw, "center")
+    end
+
+    if self.sectorCleared then
+        local msg = "SECTOR CLEANSED"
+        if self.hudTimerFont then
+            love.graphics.setFont(self.hudTimerFont)
+        end
+        local tw = love.graphics.getFont():getWidth(msg)
+        local th = love.graphics.getFont():getHeight()
+        love.graphics.setColor(0, 0, 0, 0.55)
+        love.graphics.rectangle("fill", 0, sh / 2 - th, sw, th * 2.8)
+        love.graphics.setColor(0.75, 0.92, 0.7, 1)
+        love.graphics.print(msg, (sw - tw) / 2, sh / 2 - th / 2)
+        love.graphics.setColor(0.95, 0.9, 0.78, 0.9)
+        love.graphics.setFont(self.hudLabelFont or prevFont)
+        local left = self.countdown and self.countdown:format() or "0"
+        love.graphics.printf(
+            "Time remaining  " .. left,
+            0,
+            sh / 2 + th * 0.55,
+            sw,
+            "center"
+        )
+        love.graphics.setColor(1, 1, 1, 0.85)
+        love.graphics.setFont(self.hudHelpFont or prevFont)
+        love.graphics.printf("Esc to quit", 0, sh / 2 + th * 1.15, sw, "center")
+    elseif self.extracted then
         local msg = "EXTRACTED"
         if self.hudTimerFont then
             love.graphics.setFont(self.hudTimerFont)
@@ -332,12 +507,21 @@ function state:drawHud()
         local tw = love.graphics.getFont():getWidth(msg)
         local th = love.graphics.getFont():getHeight()
         love.graphics.setColor(0, 0, 0, 0.55)
-        love.graphics.rectangle("fill", 0, sh / 2 - th, sw, th * 2.4)
+        love.graphics.rectangle("fill", 0, sh / 2 - th, sw, th * 2.8)
         love.graphics.setColor(0.95, 0.85, 0.7, 1)
         love.graphics.print(msg, (sw - tw) / 2, sh / 2 - th / 2)
+        love.graphics.setColor(0.9, 0.7, 0.55, 0.9)
+        love.graphics.setFont(self.hudLabelFont or prevFont)
+        love.graphics.printf(
+            string.format("Nests remaining: %d", nests.remaining(self.nests)),
+            0,
+            sh / 2 + th * 0.55,
+            sw,
+            "center"
+        )
         love.graphics.setColor(1, 1, 1, 0.85)
         love.graphics.setFont(self.hudHelpFont or prevFont)
-        love.graphics.printf("Esc to quit", 0, sh / 2 + th * 0.7, sw, "center")
+        love.graphics.printf("Esc to quit", 0, sh / 2 + th * 1.15, sw, "center")
     end
 
     local playerActor = self:getActor("player")
@@ -357,7 +541,7 @@ function state:drawHud()
         sh - 40
     )
     love.graphics.print(
-        "WASD/Arrows move ┬╖ Space/Click swing ┬╖ H -3s ┬╖ F1 debug ┬╖ F2 selftest ┬╖ Esc quit",
+        "WASD move · Space/Click swing · Hold E cleanse · H -3s · G +5s · Esc quit",
         10,
         sh - 24
     )
@@ -446,7 +630,12 @@ function love.load(args)
     physics.init()
 
     state.gameMap = game_map.load("res/maps/map.lua")
-    atmosphere.load()
+    state.nests = nests.fromMap(state.gameMap)
+    state.sectorCleared = false
+    state.extracted = false
+    state.floats = {}
+    state.hintTime = 4
+    atmosphere.load(state.nests)
     local playable = game_map.getPlayableArea(state.gameMap)
     physics.setPlayableArea(
         playable.x,
@@ -538,6 +727,19 @@ function love.draw()
     -- Body, sword, and trails move across the scenery layer as one stack.
     game_map.drawWithActors(state.gameMap, state.drawActors, state)
     atmosphere.drawWorld()
+    -- World-space float juice (+1s / NEST SEALED).
+    if state.hudLabelFont then
+        love.graphics.setFont(state.hudLabelFont)
+    end
+    for _, f in ipairs(state.floats or {}) do
+        if f.world then
+            local a = math.max(0, f.life / f.maxLife)
+            love.graphics.setColor(f.r, f.g, f.b, a)
+            local tw = love.graphics.getFont():getWidth(f.text)
+            love.graphics.print(f.text, f.x - tw / 2, f.y)
+        end
+    end
+    love.graphics.setColor(1, 1, 1, 1)
     physics.drawDebug()
     cam:detach()
 
@@ -577,17 +779,22 @@ function love.keypressed(k)
         -- Debug plague damage (bypasses i-frames for tuning).
         local ok, left = state:applyPlayerDamage(3, "debug", { bypassIFrames = true })
         if ok then
-            print(string.format("[countdown] damage 3.0 ΓåÆ %.1fs left", left))
+            print(string.format("[countdown] damage 3.0 → %.1fs left", left))
+        end
+    elseif k == "g" then
+        if state.countdown and not state.extracted then
+            state.countdown:addTime(5)
+            print(string.format("[countdown] +5s → %.1fs left", state.countdown:getRemaining()))
         end
     elseif k == "space" then
-        if not state.extracted then
+        if not state.extracted and not state.sectorCleared then
             startPlayerSwingAt(love.mouse.getPosition())
         end
     end
 end
 
 function love.mousepressed(x, y, button)
-    if button == 1 and not state.extracted then
+    if button == 1 and not state.extracted and not state.sectorCleared then
         startPlayerSwingAt(x, y)
     end
 end

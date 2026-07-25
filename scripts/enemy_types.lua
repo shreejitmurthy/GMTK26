@@ -12,6 +12,9 @@ enemy_types.defaults = {
         stopDeadzone = 6,
         separationDistance = 28,
         separationSpeed = 24,
+        meleeRange = 30,
+        meleeReleaseRange = 36,
+        meleeCooldown = 0.9,
         color = { 0.85, 0.35, 0.2 },
         letter = "C",
     },
@@ -27,6 +30,9 @@ enemy_types.defaults = {
         aggroRange = 160,
         preferredDistance = 70,
         band = 18,
+        meleeRange = 32,
+        meleeReleaseRange = 38,
+        meleeCooldown = 1.0,
         color = { 0.25, 0.45, 0.75 },
         letter = "K",
     },
@@ -55,9 +61,20 @@ local AI_FIELDS = {
         "stopDeadzone",
         "separationDistance",
         "separationSpeed",
+        "meleeRange",
+        "meleeReleaseRange",
+        "meleeCooldown",
     },
     fleer = { "speed", "fleeRange", "fleeDeadzone" },
-    keeper = { "speed", "aggroRange", "preferredDistance", "band" },
+    keeper = {
+        "speed",
+        "aggroRange",
+        "preferredDistance",
+        "band",
+        "meleeRange",
+        "meleeReleaseRange",
+        "meleeCooldown",
+    },
     ranger = {
         "speed",
         "aggroRange",
@@ -127,14 +144,17 @@ local function updateChaser(e, dt, player)
     local px, py, dist = distToPlayer(e, player)
     if not dist then
         e._holding = false
+        e.wantsMeleeAttack = false
         e:stop(dt)
         return
     end
     if dist > e.aggroRange then
         e._holding = false
+        e.wantsMeleeAttack = false
         e:stop(dt)
         return
     end
+    e.wantsMeleeAttack = dist <= (e.meleeRange or 30)
     if dist <= e.stopDistance then
         e._holding = true
         e:holdApartFrom(px, py, dt)
@@ -176,13 +196,16 @@ end
 local function updateKeeper(e, dt, player)
     local px, py, dist = distToPlayer(e, player)
     if not dist then
+        e.wantsMeleeAttack = false
         e:stop(dt)
         return
     end
     if dist > e.aggroRange then
+        e.wantsMeleeAttack = false
         e:stop(dt)
         return
     end
+    e.wantsMeleeAttack = dist <= (e.meleeRange or 32)
     -- Wide band = equilibrium without in/out chatter.
     if dist > e.preferredDistance + e.band then
         e:moveToward(px, py, e.speed, dt)

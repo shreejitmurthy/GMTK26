@@ -17,6 +17,7 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 - **Period HUD type:** `res/fonts/Italianno-Regular.ttf` (OFL) — copperplate / roundhand cursive for timer, labels, extract, help text
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
 - **STI map:** `res/maps/map.lua` — one Victorian decaying courtyard; districts by props (Ash Market / Plague Well / Watch Yard)
+- **Nest cleanse loop** (`scripts/nests.lua`): stand in nest + **Hold E** for 2s to seal (serum cost 2s once); kill infected → `+1s`; 3/3 → **SECTOR CLEANSED**; timer 0 → **EXTRACTED**
 
 Physics loop: input → normalize → `setLinearVelocity` → swing pose + sync sensors → `world:update(dt)` → hit enter poll → sync draw/camera from collider.
 

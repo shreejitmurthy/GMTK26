@@ -273,9 +273,9 @@ local function buildSpawns(startId)
         id = id + 1
     end
 
-    add("nest_a", 4, 14, 2, 2, { nest = "a", cleanseRadius = 72, district = "Ash Market" })
-    add("nest_b", 14, 11, 2, 2, { nest = "b", cleanseRadius = 80, district = "Plague Well" })
-    add("nest_c", 24, 12, 2, 2, { nest = "c", cleanseRadius = 72, district = "Watch Yard" })
+    add("nest_a", 4, 14, 2, 2, { nest = "a", cleanseRadius = 36, district = "Ash Market" })
+    add("nest_b", 14, 11, 2, 2, { nest = "b", cleanseRadius = 36, district = "Plague Well" })
+    add("nest_c", 24, 12, 2, 2, { nest = "c", cleanseRadius = 40, district = "Watch Yard" })
 
     add("player_start", 6, 16, 1, 1, {})
 
