@@ -23,12 +23,13 @@ function physics.init()
     physics.world = wf.newWorld(0, 0, true)
     physics.walls = {}
     physics.enemies = {}
+    physics.arena = nil
 
     physics.world:addCollisionClass("Player")
     -- Kinematic enemies must not solid-shove the dynamic player (that tunnels through walls
     -- when cornered). Soft resistance + separation handle player↔enemy feel instead.
-    -- Kinematic↔kinematic / kinematic↔static also never resolve in Box2D, so wall slide
-    -- and enemy separation are applied in constrainEnemyMotion.
+    -- Kinematic↔kinematic / kinematic↔static also never resolve in Box2D, so wall slide,
+    -- trySetEnemyPosition, and clampEnemyToPlayable enforce walls / playable bounds.
     physics.world:addCollisionClass("Enemy", {
         ignores = { "Player" },
     })
@@ -126,11 +127,219 @@ function physics.resistInwardVelocity(vx, vy, nx, ny, strength)
         vy - ny * inwardSpeed * strength
 end
 
+--- True if the enemy AABB at (cx,cy) overlaps any Wall collider.
+function physics.enemyOverlapsWall(enemyCollider, cx, cy)
+    if not physics.world or not enemyCollider then
+        return false
+    end
+    cx = cx or enemyCollider:getX()
+    cy = cy or enemyCollider:getY()
+    local hw = enemyCollider.halfWidth or 0
+    local hh = enemyCollider.halfHeight or 0
+    local hits = physics.world:queryRectangleArea(cx - hw, cy - hh, hw * 2, hh * 2, { "Wall" })
+    return #hits > 0
+end
+
+--- Center AABB inset by enemy half-extents so the body stays inside outer walls.
+function physics.getEnemyPlayableBounds(enemyCollider)
+    local arena = physics.arena
+    if not arena then
+        return nil
+    end
+    local hw = (enemyCollider and enemyCollider.halfWidth) or 0
+    local hh = (enemyCollider and enemyCollider.halfHeight) or 0
+    return {
+        minX = arena.innerLeft + hw,
+        maxX = arena.innerRight - hw,
+        minY = arena.innerTop + hh,
+        maxY = arena.innerBottom - hh,
+        cx = arena.cx,
+        cy = arena.cy,
+    }
+end
+
+function physics.isEnemyInsidePlayable(enemyCollider, cx, cy)
+    cx = cx or enemyCollider:getX()
+    cy = cy or enemyCollider:getY()
+    local b = physics.getEnemyPlayableBounds(enemyCollider)
+    if not b then
+        return true
+    end
+    return cx >= b.minX and cx <= b.maxX and cy >= b.minY and cy <= b.maxY
+end
+
+--- Playable interior AND not overlapping a Wall.
+function physics.enemyPositionValid(enemyCollider, cx, cy)
+    return physics.isEnemyInsidePlayable(enemyCollider, cx, cy)
+        and not physics.enemyOverlapsWall(enemyCollider, cx, cy)
+end
+
+local function syncEnemyHurtbox(enemyCollider)
+    local obj = enemyCollider and enemyCollider.getObject and enemyCollider:getObject()
+    if obj and obj.syncHurtbox then
+        obj:syncHurtbox()
+    end
+end
+
+--- Search an open point inside playable bounds, preferring arena center (inward).
+--- Never returns a point outside the playable AABB or inside a Wall.
+function physics.findEnemyUnstickPosition(enemyCollider, fromX, fromY)
+    local b = physics.getEnemyPlayableBounds(enemyCollider)
+    if not b then
+        return nil
+    end
+
+    fromX = fromX or enemyCollider:getX()
+    fromY = fromY or enemyCollider:getY()
+
+    local bestX, bestY, bestScore = nil, nil, math.huge
+    local toCx, toCy = b.cx - fromX, b.cy - fromY
+    local toLen = math.sqrt(toCx * toCx + toCy * toCy)
+    if toLen < 0.001 then
+        toCx, toCy = 0, -1
+    else
+        toCx, toCy = toCx / toLen, toCy / toLen
+    end
+
+    local function consider(px, py)
+        px = math.max(b.minX, math.min(b.maxX, px))
+        py = math.max(b.minY, math.min(b.maxY, py))
+        if not physics.enemyPositionValid(enemyCollider, px, py) then
+            return
+        end
+        local dx, dy = px - b.cx, py - b.cy
+        local distCenter = math.sqrt(dx * dx + dy * dy)
+        local ox, oy = px - fromX, py - fromY
+        local distMove = math.sqrt(ox * ox + oy * oy)
+        local inward = ox * toCx + oy * toCy
+        local score = distCenter * 2 + distMove
+        if inward > 0 then
+            score = score - 20
+        end
+        if score < bestScore then
+            bestScore = score
+            bestX, bestY = px, py
+        end
+    end
+
+    for dist = 2, 56, 2 do
+        consider(fromX + toCx * dist, fromY + toCy * dist)
+        for i = 0, 15 do
+            local a = (i / 16) * math.pi * 2
+            consider(fromX + math.cos(a) * dist, fromY + math.sin(a) * dist)
+        end
+        -- Prefer a nearby inward solution once one exists.
+        if bestX and dist >= 12 then
+            return bestX, bestY
+        end
+    end
+    if bestX then
+        return bestX, bestY
+    end
+
+    -- Hard fallback: spiral from arena center (never outward past playable).
+    for dist = 0, 96, 4 do
+        if dist == 0 then
+            consider(b.cx, b.cy)
+        else
+            for i = 0, 23 do
+                local a = (i / 24) * math.pi * 2
+                consider(b.cx + math.cos(a) * dist, b.cy + math.sin(a) * dist)
+            end
+        end
+        if bestX then
+            return bestX, bestY
+        end
+    end
+
+    return b.cx, b.cy
+end
+
+--- Clamp into playable AABB; if still in a Wall (interior block), unstick inward.
+--- Returns true when position changed. Updates pushAnchor to the final valid pos.
+function physics.clampEnemyToPlayable(enemyCollider)
+    if not enemyCollider or enemyCollider:isDestroyed() then
+        return false
+    end
+
+    local x, y = enemyCollider:getX(), enemyCollider:getY()
+    local b = physics.getEnemyPlayableBounds(enemyCollider)
+    local moved = false
+
+    if b then
+        local cx = math.max(b.minX, math.min(b.maxX, x))
+        local cy = math.max(b.minY, math.min(b.maxY, y))
+        if cx ~= x or cy ~= y then
+            x, y = cx, cy
+            moved = true
+        end
+    end
+
+    if physics.enemyPositionValid(enemyCollider, x, y) then
+        if moved then
+            enemyCollider:setPosition(x, y)
+            enemyCollider:setLinearVelocity(0, 0)
+            enemyCollider.pushAnchorX = x
+            enemyCollider.pushAnchorY = y
+            syncEnemyHurtbox(enemyCollider)
+        elseif not physics.enemyPositionValid(
+            enemyCollider,
+            enemyCollider.pushAnchorX or x,
+            enemyCollider.pushAnchorY or y
+        ) then
+            enemyCollider.pushAnchorX = enemyCollider:getX()
+            enemyCollider.pushAnchorY = enemyCollider:getY()
+        end
+        return moved
+    end
+
+    local rx, ry = physics.findEnemyUnstickPosition(enemyCollider, x, y)
+    if not rx then
+        return false
+    end
+    enemyCollider:setPosition(rx, ry)
+    enemyCollider:setLinearVelocity(0, 0)
+    enemyCollider.pushAnchorX = rx
+    enemyCollider.pushAnchorY = ry
+    syncEnemyHurtbox(enemyCollider)
+    return true
+end
+
+--- Set position only when inside playable and clear of Walls. Returns success.
+function physics.trySetEnemyPosition(enemyCollider, x, y)
+    if not enemyCollider or enemyCollider:isDestroyed() then
+        return false
+    end
+    if not physics.enemyPositionValid(enemyCollider, x, y) then
+        return false
+    end
+    enemyCollider:setPosition(x, y)
+    return true
+end
+
+function physics.clampAllEnemiesToPlayable()
+    for _, enemyCollider in ipairs(physics.enemies) do
+        if not enemyCollider:isDestroyed() then
+            physics.clampEnemyToPlayable(enemyCollider)
+        end
+    end
+end
+
 --- Nudge an enemy away from contact without giving it velocity. Movement is
 --- bounded around its anchor, so sustained pressure cannot shove it far away.
+--- Wall / playable constraints always win over maxPushDistance.
 function physics.nudgeEnemy(enemyCollider, nx, ny, strength, dt)
     if strength <= 0 or enemyCollider.maxPushDistance <= 0 then
         return
+    end
+
+    -- Never nudge from an invalid anchor (would teleport into/through walls).
+    if not physics.enemyPositionValid(
+        enemyCollider,
+        enemyCollider.pushAnchorX,
+        enemyCollider.pushAnchorY
+    ) then
+        physics.clampEnemyToPlayable(enemyCollider)
     end
 
     local step = enemyCollider.pushSpeed * dt * math.min(1, strength)
@@ -145,10 +354,28 @@ function physics.nudgeEnemy(enemyCollider, nx, ny, strength, dt)
         offsetX, offsetY = offsetX * scale, offsetY * scale
     end
 
-    enemyCollider:setPosition(
-        enemyCollider.pushAnchorX + offsetX,
-        enemyCollider.pushAnchorY + offsetY
-    )
+    local function tryOffset(frac)
+        local tx = enemyCollider.pushAnchorX + offsetX * frac
+        local ty = enemyCollider.pushAnchorY + offsetY * frac
+        if physics.trySetEnemyPosition(enemyCollider, tx, ty) then
+            enemyCollider:setLinearVelocity(0, 0)
+            syncEnemyHurtbox(enemyCollider)
+            return true
+        end
+        return false
+    end
+
+    if tryOffset(1) then
+        return
+    end
+    for frac = 0.75, 0.05, -0.125 do
+        if tryOffset(frac) then
+            return
+        end
+    end
+
+    -- Cancel nudge; ensure we are not left embedded / OOB.
+    physics.clampEnemyToPlayable(enemyCollider)
     enemyCollider:setLinearVelocity(0, 0)
 end
 
@@ -202,14 +429,10 @@ function physics.applyEnemyResistance(playerCollider, vx, vy, dt)
         end
     end
 
-    return vx, vy
-end
+    -- Soft-push must never leave enemies embedded or outside the arena.
+    physics.clampAllEnemiesToPlayable()
 
-local function enemyHitsWallAt(enemyCollider, cx, cy)
-    local hw = enemyCollider.halfWidth or 0
-    local hh = enemyCollider.halfHeight or 0
-    local hits = physics.world:queryRectangleArea(cx - hw, cy - hh, hw * 2, hh * 2, { "Wall" })
-    return #hits > 0
+    return vx, vy
 end
 
 --- True when no solid Wall collider blocks the segment between two points.
@@ -249,7 +472,7 @@ function physics.lineOfSightStrafeDirection(
     for _, side in ipairs(sides) do
         local probeX = x + leftX * side * probeDistance
         local probeY = y + leftY * side * probeDistance
-        if not enemyHitsWallAt(enemyCollider, probeX, probeY) then
+        if physics.enemyPositionValid(enemyCollider, probeX, probeY) then
             if physics.hasLineOfSight(probeX, probeY, targetX, targetY) then
                 return leftX * side, leftY * side, side
             end
@@ -299,7 +522,7 @@ function physics.findLineOfSightPosition(
 
     local function visibleCandidate(side, step)
         local candidateX, candidateY = candidate(side, step)
-        if enemyHitsWallAt(enemyCollider, candidateX, candidateY) then
+        if not physics.enemyPositionValid(enemyCollider, candidateX, candidateY) then
             return nil
         end
         if not physics.hasLineOfSight(candidateX, candidateY, targetX, targetY) then
@@ -345,35 +568,30 @@ function physics.findLineOfSightPosition(
     return results[1].x, results[1].y, results[1].side
 end
 
---- Zero velocity into walls (kinematic bodies do not resolve vs static Wall).
+local function enemyMotionBlockedAt(enemyCollider, cx, cy)
+    return not physics.enemyPositionValid(enemyCollider, cx, cy)
+end
+
+--- Zero velocity into walls / OOB (kinematic bodies do not resolve vs static Wall).
+--- Embedded recovery searches inward (toward arena center), never ejects outside.
 function physics.slideEnemyAgainstWalls(enemyCollider, vx, vy, dt)
     dt = dt or (1 / 60)
     local x, y = enemyCollider:getX(), enemyCollider:getY()
 
-    if enemyHitsWallAt(enemyCollider, x, y) then
-        -- Already embedded: step out along cardinals, then halt this frame.
-        for dist = 2, 28, 2 do
-            local dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
-            for _, dir in ipairs(dirs) do
-                local nx, ny = x + dir[1] * dist, y + dir[2] * dist
-                if not enemyHitsWallAt(enemyCollider, nx, ny) then
-                    enemyCollider:setPosition(nx, ny)
-                    return 0, 0
-                end
-            end
-        end
+    if enemyMotionBlockedAt(enemyCollider, x, y) then
+        physics.clampEnemyToPlayable(enemyCollider)
         return 0, 0
     end
 
     local nextX, nextY = x + vx * dt, y + vy * dt
-    if enemyHitsWallAt(enemyCollider, nextX, nextY) then
-        if enemyHitsWallAt(enemyCollider, nextX, y) then
+    if enemyMotionBlockedAt(enemyCollider, nextX, nextY) then
+        if enemyMotionBlockedAt(enemyCollider, nextX, y) then
             vx = 0
         end
-        if enemyHitsWallAt(enemyCollider, x, nextY) then
+        if enemyMotionBlockedAt(enemyCollider, x, nextY) then
             vy = 0
         end
-        if enemyHitsWallAt(enemyCollider, x + vx * dt, y + vy * dt) then
+        if enemyMotionBlockedAt(enemyCollider, x + vx * dt, y + vy * dt) then
             vx, vy = 0, 0
         end
     end
@@ -460,11 +678,12 @@ function physics.applyEnemySeparation(enemyCollider, vx, vy, minSep, separationS
     return vx, vy
 end
 
---- Separation + wall slide, then clamp to maxSpeed (no √2 boost from blending).
+--- Separation + wall/playable slide, then clamp to maxSpeed (no √2 boost from blending).
 --- Idle input (near-zero velocity) skips separation so stopped enemies do not drift.
 function physics.constrainEnemyMotion(enemyCollider, vx, vy, dt, maxSpeed)
     local inputSpeed = math.sqrt(vx * vx + vy * vy)
     if inputSpeed < 0.01 then
+        physics.clampEnemyToPlayable(enemyCollider)
         return 0, 0
     end
 
@@ -549,6 +768,8 @@ function physics.spawnTestArena(cx, cy)
     physics.addWall(cx - 10, cy - 70, 20, 40)
     physics.addWall(cx + 40, cy + 20, 48, 16)
 
+    -- Playable interior = inside the four outer wall faces. Enemy clamps inset
+    -- each collider by halfWidth/halfHeight so bodies never overlap outer walls.
     physics.arena = {
         cx = cx,
         cy = cy,

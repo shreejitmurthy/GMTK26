@@ -1,6 +1,7 @@
 -- Console PASS/FAIL checks for the physics milestone (no LOVE key simulation needed).
 
 local physics = require "scripts.physics"
+local countdown = require "scripts.countdown"
 require "scripts.player"
 
 local selftest = {}
@@ -149,6 +150,57 @@ function selftest.run(playerActor, enemyActors)
         sample.collider:setPosition(cx, cy)
         sample:stop()
         sample:syncFromCollider()
+
+        -- Soft-push must not shove kinematic enemies into walls / OOB.
+        local arena = physics.arena
+        allOk = check("playable clamp helpers exist",
+            type(physics.trySetEnemyPosition) == "function"
+                and type(physics.clampEnemyToPlayable) == "function"
+                and type(physics.enemyOverlapsWall) == "function"
+                and type(physics.isEnemyInsidePlayable) == "function"
+                and arena ~= nil) and allOk
+
+        if arena then
+            local hw = sample.collider.halfWidth or 7
+            local hh = sample.collider.halfHeight or 7
+            local nearWallX = arena.innerRight - hw - 1
+            local nearWallY = arena.cy
+            sample.collider:setPosition(nearWallX, nearWallY)
+            sample:refreshPushAnchor()
+            -- Player to the left → nudge pushes enemy right into the wall.
+            physics.nudgeEnemy(sample.collider, -1, 0, 1, 1)
+            physics.clampEnemyToPlayable(sample.collider)
+            local nx2, ny2 = sample.collider:getX(), sample.collider:getY()
+            allOk = check("nudge toward wall stays playable / clear of Wall",
+                physics.enemyPositionValid(sample.collider, nx2, ny2)
+                    and nx2 <= arena.innerRight - hw + 0.01
+                    and nx2 >= arena.innerLeft + hw - 0.01,
+                string.format("pos %.1f,%.1f wall=%s playable=%s",
+                    nx2, ny2,
+                    tostring(physics.enemyOverlapsWall(sample.collider, nx2, ny2)),
+                    tostring(physics.isEnemyInsidePlayable(sample.collider, nx2, ny2)))) and allOk
+
+            -- Deliberately embed in the right outer wall; recovery must go inward.
+            local embedX = arena.innerRight + arena.thickness * 0.5
+            local embedY = arena.cy
+            sample.collider:setPosition(embedX, embedY)
+            sample.collider.pushAnchorX, sample.collider.pushAnchorY = embedX, embedY
+            physics.clampEnemyToPlayable(sample.collider)
+            local rx, ry = sample.collider:getX(), sample.collider:getY()
+            allOk = check("clamp recovers embedded enemy into playable (not OOB)",
+                physics.enemyPositionValid(sample.collider, rx, ry)
+                    and rx <= arena.innerRight - hw + 0.01
+                    and rx >= arena.innerLeft + hw - 0.01
+                    and ry <= arena.innerBottom - hh + 0.01
+                    and ry >= arena.innerTop + hh - 0.01
+                    and rx < arena.innerRight,
+                string.format("from %.1f,%.1f → %.1f,%.1f", embedX, embedY, rx, ry)) and allOk
+
+            sample.collider:setPosition(cx, cy)
+            sample:refreshPushAnchor()
+            sample:stop()
+            sample:syncFromCollider()
+        end
     end
 
     -- Typed enemies: chaser / fleer / keeper / ranger present with defaults.
@@ -226,16 +278,25 @@ function selftest.run(playerActor, enemyActors)
         local px, py = playerActor.collider:getX(), playerActor.collider:getY()
         local startingHitCount = playerActor.enemyHitCount
         local startingAttackSerial = r.attackSerial
+        local liveCountdown = rawget(_G, "state") and state.countdown
+        local savedRemaining = liveCountdown and liveCountdown:getRemaining()
+        local savedExtracted = rawget(_G, "state") and state.extracted
         r.collider:setPosition(px + r.meleeRange - 2, py)
         r:refreshPushAnchor()
         r._meleeEngaged = false
         r.wantsMeleeAttack = false
         r.attackCooldownTimer = 0
+        playerActor.hurtIFrame = 0
         r:update(1 / 60, playerActor)
         local meleeVX, meleeVY = r.collider:getLinearVelocity()
         local meleeSpeed = math.sqrt(
             meleeVX * meleeVX + meleeVY * meleeVY
         )
+        local drainedOk = true
+        if liveCountdown and savedRemaining then
+            drainedOk = liveCountdown:getRemaining()
+                <= savedRemaining - (playerActor.hitDamageSeconds or player.HIT_DAMAGE_SECONDS) + 0.01
+        end
         allOk = check("cornered ranger stops, faces, and hits",
             r._meleeEngaged
                 and r.wantsMeleeAttack
@@ -243,13 +304,15 @@ function selftest.run(playerActor, enemyActors)
                 and r.facing.x < -0.99
                 and math.abs(r.facing.y) < 0.01
                 and r.attackSerial == startingAttackSerial + 1
-                and playerActor.enemyHitCount == startingHitCount + 1,
+                and playerActor.enemyHitCount == startingHitCount + 1
+                and drainedOk,
             string.format(
-                "engaged=%s speed=%.2f facing=%.2f,%.2f attacks=%d hits=%d",
+                "engaged=%s speed=%.2f facing=%.2f,%.2f attacks=%d hits=%d drained=%s",
                 tostring(r._meleeEngaged), meleeSpeed,
                 r.facing.x, r.facing.y,
                 r.attackSerial - startingAttackSerial,
-                playerActor.enemyHitCount - startingHitCount
+                playerActor.enemyHitCount - startingHitCount,
+                tostring(drainedOk)
             )) and allOk
 
         r:update(1 / 60, playerActor)
@@ -267,6 +330,16 @@ function selftest.run(playerActor, enemyActors)
         r.attackFlash = 0
         playerActor.enemyHitCount = startingHitCount
         playerActor.enemyHitFlash = 0
+        playerActor.hurtIFrame = 0
+        if liveCountdown and savedRemaining then
+            liveCountdown.remaining = savedRemaining
+            liveCountdown.damagePulse = 0
+            liveCountdown.damagePulseTime = 0
+            liveCountdown.paused = false
+        end
+        if rawget(_G, "state") and savedExtracted ~= nil then
+            state.extracted = savedExtracted
+        end
         r:stop()
         r:syncFromCollider()
 
@@ -387,6 +460,22 @@ function selftest.run(playerActor, enemyActors)
     allOk = check("no unnormalized √2 speedup",
         ratio < 1.05,
         string.format("ratio=%.4f", ratio)) and allOk
+
+    -- Plague countdown: damage reduces remaining and clamps at 0.
+    local cd = countdown.new({ duration = 10 })
+    cd:damage(3)
+    allOk = check("countdown damage reduces remaining",
+        nearlyEqual(cd:getRemaining(), 7),
+        string.format("got %.2f", cd:getRemaining())) and allOk
+    cd:damage(100)
+    allOk = check("countdown damage clamps at 0",
+        nearlyEqual(cd:getRemaining(), 0) and cd:isExpired(),
+        string.format("got %.2f expired=%s", cd:getRemaining(), tostring(cd:isExpired()))) and allOk
+    allOk = check("player hit damage / iframe tunables",
+        nearlyEqual(player.HIT_DAMAGE_SECONDS, 5)
+            and nearlyEqual(player.HURT_IFRAME, 0.6),
+        string.format("dmg=%.1f iframe=%.1f",
+            player.HIT_DAMAGE_SECONDS, player.HURT_IFRAME)) and allOk
 
     print(allOk and "[physics_selftest] ALL PASS" or "[physics_selftest] SOME FAILED")
     return allOk

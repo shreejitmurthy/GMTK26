@@ -1,6 +1,6 @@
 # GMTK26 — Plague Doctor (LÖVE2D)
 
-Top-down hack-and-slash jam game. **Countdown timer is health** — the time you can withstand the plague. Hits (soon) drain seconds; at 0 the company extracts you.
+Top-down hack-and-slash jam game. **Countdown timer is health** — the time you can withstand the plague. Enemy hits drain seconds; at 0 the company extracts you.
 
 ## What works today
 
@@ -11,10 +11,11 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 - Slash trail (`scripts/slash_trail.lua`): procedural fading ribbon generated from the sword's hilt/tip pose and split across behind/front player layers
 - Enemies: soft barriers + `EnemyHit` sensor hurtboxes; resistance increases near their body and contact permits only a tiny, momentum-free nudge
 - Enemies can **move** via shared locomotion (`moveToward` / `moveAway` / `stop`); after intentional AI motion each frame, `pushAnchorX/Y` is refreshed to the collider so soft contact still works and AI is not yanked back to spawn
-- Four enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper**, **ranger** — polished locomotion plus the ranger's cornered melee response (countdown damage later)
-- **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**) with a thin **PLAGUE TOLERANCE** fuse under the digits (same resource). Damage flash + floating `-Xs` via `damagePulse`. Low-time edge tint. At 0 → **EXTRACTED**. **H** debug-damages **3s**. Real enemy → timer drain not wired yet
+- **Kinematic wall policy:** Enemy bodies are kinematic (Box2D does not resolve Enemy vs Wall). Motion uses `slideEnemyAgainstWalls` / `constrainEnemyMotion`; soft-push uses `trySetEnemyPosition` (never teleports into walls). `clampEnemyToPlayable` + per-frame `clampAllEnemiesToPlayable` keep every enemy inside the stub arena interior and clear of Wall colliders (unstick prefers arena center — never ejects OOB).
+- Four enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper**, **ranger** — polished locomotion; ranger cornered melee drains the plague timer
+- **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**) with a thin **PLAGUE TOLERANCE** fuse. Enemy hits → `state:applyPlayerDamage` → `countdown:damage` (**5s** default, **0.6s** i-frames). **H** debug-damages **3s** (bypasses i-frames). Player sword hits do **not** drain your timer. At 0 → **EXTRACTED**
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
-- STI / full animations / combat damage→timer: not wired yet
+- STI / full animations: not wired yet
 
 Physics loop: input → normalize → `setLinearVelocity` → swing pose + sync sensors → `world:update(dt)` → hit enter poll → sync draw/camera from collider.
 
@@ -101,7 +102,7 @@ Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:
 - **Speeds / ranges:** raise `speed` for snappier pressure; widen `aggroRange` / `fleeRange` so types engage sooner; grow `stopDistance` / `band` / `*Deadzone` if you see vibrate at equilibrium.
 - **Pack spacing:** `physics.enemyMinSep` (~28) — light lateral avoidance while moving so blobs don't stack. Chasers also shuffle apart at low speed while holding near the player; enemies outside their active behavior still hard-zero velocity (no drift).
 - **Spawns:** `physics.pickSpawnPoint` places enemies inside arena bounds away from walls/player.
-- **Known non-goals:** no full navigation/pathfinding around interior blocks (the ranger only strafes to restore LOS); ranger hits currently provide feedback but countdown damage and attacks for other types are not wired yet.
+- **Known non-goals:** no full navigation/pathfinding around interior blocks (the ranger only strafes to restore LOS); other enemy types still lack attack hooks (ranger melee already drains the plague timer).
 
 ### World update
 - Call **`world:update(dt)` every frame during gameplay** (via `physics.update`). Skipping this breaks collision and movement.
@@ -117,13 +118,12 @@ Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:
 - Display: large **top-center** clock (`M:SS`, tenths under 10s) + thin segmented **PLAGUE TOLERANCE** fuse (width = `getRatio()`, same color family — not a heart HP bar).
 - Feedback: `:damage()` sets `damagePulse` (~0.4s) — digit/fuse flash + floating `-Xs`. Ratio < 0.15 → subtle screen-edge tint.
 - Urgency: warmer tint below 25% remaining; subtle pulse below 10%.
-- **Debug:** press **H** to call `countdown:damage(3)` (~3 seconds). Console: `[countdown] damage 3.0 → X.Xs left`.
-- At 0: `state.extracted = true`, show **EXTRACTED**, freeze player/enemy AI; Esc still quits.
-- **Next:** wire `player:onHitByEnemy` → `countdown:damage(...)` so real combat drains time. Debug key remains for tuning.
+- **Combat drain (done):** `player:onHitByEnemy` → `state:applyPlayerDamage(amount, source)` → `countdown:damage`. Default hit: **`PLAYER_HIT_DAMAGE_SECONDS` / `player.HIT_DAMAGE_SECONDS` = 5**. I-frames: **`PLAYER_HURT_IFRAME` / `player.HURT_IFRAME` = 0.6s** (`player.hurtIFrame`). Player sword → enemy does **not** drain the player timer.
+- **Debug:** press **H** → `applyPlayerDamage(3, "debug", { bypassIFrames = true })`. Console: `[countdown] damage 3.0 → X.Xs left`.
+- At 0: `state.extracted = true`, show **EXTRACTED**, freeze player/enemy AI, stop further damage; Esc still quits.
 
 ### Later (do not build full systems now)
-- Wire **enemy damage → countdown** (ranger already calls `player:onHitByEnemy()`; connect that to `state.countdown:damage`).
-- Other enemy attacks remain unwired.
+- Other enemy types still lack attack hooks (only ranger melee drains today).
 - Classes/`newSensor` helpers exist; no plague-meter bar / builds / classes this pass.
 
 ---
@@ -137,9 +137,11 @@ Pass/fail against a playable build:
 - [x] Direction is **normalized before speed** (diagonal `|v|` ≈ cardinal `|v|`)
 - [x] After update, sprite + camera match collider position (no visible desync)
 - [x] **Walls block** the player; cannot walk through stub arena
-- [x] Player ↔ Enemy soft contact (resistance ramps up; enemy nudge is capped at 3px with no momentum)
+- [x] Player ↔ Enemy soft contact (resistance ramps up; enemy nudge is capped at 3px with no momentum; nudge cannot shove enemies into Wall / OOB)
+- [x] Kinematic enemies stay inside playable arena via clamp safety net (no wall embed / OOB eject)
 - [x] **`PlayerAttack` / `EnemyHit` classes + `newSensor` helper** exist (full attack combat still out of scope)
-- [x] Attack sensor toggled in-game with Enemy overlap detect (**Space/click swing**; console `[hit]` on `PlayerAttack`→`EnemyHit` enter; once per enemy per swing; no damage yet)
+- [x] Attack sensor toggled in-game with Enemy overlap detect (**Space/click swing**; console `[hit]` on `PlayerAttack`→`EnemyHit` enter; once per enemy per swing; enemy flash only — does not drain player timer)
+- [x] Ranger melee → `state:applyPlayerDamage` → countdown drain + i-frames
 - [x] `world:update(dt)` runs every gameplay frame
 - [x] Debug draw of colliders toggled with **F1** / backtick without breaking camera
 - [x] Wall-creation helper exists so STI can feed the same path later (`addWall` / `addWallsFromObjects`)
@@ -151,17 +153,17 @@ Pass/fail against a playable build:
 1. Run the game: `love .` from the project root.
 2. On load, console should print `[physics_selftest] ALL PASS` (or press **F2** to re-run).
 3. Move with **WASD** and **arrow keys**. Confirm smooth top-down motion and **no gravity drift** when idle.
-4. Walk into stub arena walls / interior blocks: walls stop immediately. Approach an enemy: movement progressively resists and contact may nudge it up to 3px, but holding input must never shove it farther or launch either actor.
+4. Walk into stub arena walls / interior blocks: walls stop immediately. Approach an enemy: movement progressively resists and contact may nudge it up to 3px, but holding input must never shove it farther, launch either actor, or push an enemy into a wall / outside the arena. Pin the purple ranger and green fleer against each outer wall and both interior blocks for 5+ seconds — no embed, no OOB.
 5. Press **F1** (or **\`**): collider outlines appear for player + walls + **sensors** (`EnemyHit` always; `PlayerAttack` only during a swing, moving with the sword). HUD shows collider pos and **velocity magnitude `|v|`**.
 6. **Sword direction test:** aim and swing twice. The first swing should travel from the player's relative left (behind) to right (in front), remain held there, then reverse direction and layer order on the second swing.
 7. **Swing / hitbox test:** point the mouse toward an enemy, then press **Space** or **left-click**. The sword actor swings in that world-space direction. F1 shows `PlayerAttack` sweeping with the sword; idle = no attack sensor. On overlap enter, console prints `[hit] PlayerAttack entered EnemyHit (...)` (once per enemy per swing).
 8. **Diagonal speed check:** hold **Right** only and note `|v|` in the debug HUD; then hold **Up+Right**. Magnitudes must match (within ~1%). If diagonal is ~1.41× faster, normalization is broken (FAIL).
 9. Release movement: `|v|` returns to ~0; camera still follows the player.
 10. Esc quits.
-11. **Countdown check:** big timer ticks at top-center. Press **H** — time drops ~3s immediately (console log). Let it hit 0 (or mash H) → **EXTRACTED**; timer stays at 0, movement/AI freeze, Esc quits. Sword/enemies still work before extract; combat does not yet drain the timer.
+11. **Countdown / combat check:** big timer ticks at top-center. Get hit by the purple ranger — timer drops ~5s, UI flashes, ~0.6s i-frames prevent melt. **H** still subtracts 3s (ignores i-frames). Sword hits on enemies do **not** drain your timer. At 0 → **EXTRACTED**.
 
 ---
 
 ## Out of scope this pass
 
-STI map polish, animation sets, plague meter bar, builds/classes, full attack combat damage numbers — except the countdown HUD + debug drain; real enemy → timer wire is next.
+STI map polish, animation sets, plague meter bar, builds/classes, attacks for non-ranger types — enemy hit → countdown is wired for ranger melee.

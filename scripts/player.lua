@@ -1,5 +1,5 @@
 -- Clean top-down player: Windfield collider owns position.
--- Decoupled sword swing moves PlayerAttack; damage/timer later.
+-- Decoupled sword swing moves PlayerAttack; hits drain plague countdown via state.
 
 require "scripts.actor"
 local physics = require "scripts.physics"
@@ -21,6 +21,12 @@ local SWORD_HILT_GAP = 12
 local SWORD_HORIZONTAL_REST_TILT = math.rad(15)
 local SWORD_VERTICAL_REST_TILT = math.rad(35)
 local ENEMY_HIT_FLASH_DURATION = 0.18
+
+-- Tunables: enemy hit drain (seconds) + invuln window after a hit.
+player.HIT_DAMAGE_SECONDS = 5
+player.HURT_IFRAME = 0.6
+PLAYER_HIT_DAMAGE_SECONDS = player.HIT_DAMAGE_SECONDS
+PLAYER_HURT_IFRAME = player.HURT_IFRAME
 
 --- Pure helper for tests / movement: normalize direction, THEN apply speed.
 function player.normalizedVelocity(dx, dy, speed)
@@ -123,6 +129,11 @@ function player:new(x, y)
     p.swingHitEnemies = {}
     p.enemyHitCount = 0
     p.enemyHitFlash = 0
+    p.hurtIFrame = 0
+    p.hitDamageSeconds = player.HIT_DAMAGE_SECONDS
+    p.hurtIFrameDuration = player.HURT_IFRAME
+    -- Set by gameplay (state:applyPlayerDamage) so combat drain stays centralized.
+    p.applyDamage = nil
     p.attackPose = {
         angle = 0,
         orbitAngle = 0,
@@ -155,16 +166,39 @@ function player:new(x, y)
     return p
 end
 
---- Enemy hit callback. The countdown-health system is not wired yet, so this
---- records the hit and gives immediate visual/console feedback.
+--- Enemy hit callback → plague countdown drain (via state.applyPlayerDamage).
+--- I-frames: ignore hits while hurtIFrame > 0 (debug damage bypasses separately).
 function player:onHitByEnemy(source)
+    if (self.hurtIFrame or 0) > 0 then
+        return
+    end
+
+    local amount = self.hitDamageSeconds or player.HIT_DAMAGE_SECONDS
+    local remaining = nil
+    if self.applyDamage then
+        local ok, left = self.applyDamage(amount, source)
+        if not ok then
+            return
+        end
+        remaining = left
+    end
+
     self.enemyHitCount = self.enemyHitCount + 1
     self.enemyHitFlash = ENEMY_HIT_FLASH_DURATION
-    print(string.format(
-        "[hit] %s hit player (#%d)",
-        (source and source.enemyType) or "enemy",
-        self.enemyHitCount
-    ))
+    if remaining ~= nil then
+        print(string.format(
+            "[hit] %s hit player (#%d) → %.1fs left",
+            (source and source.enemyType) or "enemy",
+            self.enemyHitCount,
+            remaining
+        ))
+    else
+        print(string.format(
+            "[hit] %s hit player (#%d)",
+            (source and source.enemyType) or "enemy",
+            self.enemyHitCount
+        ))
+    end
 end
 
 --- Sword pose from swing progress (0..1). Angle+offset relative to facing at swing start.
@@ -332,6 +366,9 @@ end
 function player:update(dt)
     if self.enemyHitFlash > 0 then
         self.enemyHitFlash = math.max(0, self.enemyHitFlash - dt)
+    end
+    if self.hurtIFrame > 0 then
+        self.hurtIFrame = math.max(0, self.hurtIFrame - dt)
     end
     local input = { x = 0, y = 0 }
 

@@ -113,6 +113,8 @@ function enemy:faceToward(tx, ty)
 end
 
 function enemy:applyVelocity(vx, vy)
+    -- Unstick / AABB clamp first so we don't re-apply velocity from inside a wall.
+    physics.clampEnemyToPlayable(self.collider)
     self.collider:setLinearVelocity(vx, vy)
     self:updateFacingFromVelocity(vx, vy)
     if math.abs(vx) > 0.01 or math.abs(vy) > 0.01 then
@@ -222,8 +224,7 @@ function enemy:onHitByPlayer()
     self.hurtFlash = HURT_FLASH_DURATION
 end
 
---- Close-range attack hook. Countdown damage can be added in player:onHitByEnemy
---- later; for now the callback supplies visible feedback and a testable hit event.
+--- Close-range attack hook → player:onHitByEnemy → state:applyPlayerDamage.
 function enemy:tryAttack(dt, player)
     self.attackCooldownTimer = math.max(
         0,
@@ -266,6 +267,8 @@ function enemy:update(dt, player)
     end
     enemy_types.update(self, dt, player)
     self:tryAttack(dt, player)
+    physics.clampEnemyToPlayable(self.collider)
+    self:syncHurtbox()
 end
 
 function enemy:syncHurtbox()

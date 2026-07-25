@@ -57,6 +57,39 @@ function state:getActor(label)
     return nil
 end
 
+--- Single gameplay entry for plague damage (timer = health).
+--- opts.bypassIFrames: debug key may ignore invuln for testing.
+--- Returns ok, remainingSeconds.
+function state:applyPlayerDamage(amount, source, opts)
+    opts = opts or {}
+    if self.extracted or not self.countdown then
+        return false, 0
+    end
+
+    local playerActor = self:getActor("player")
+    if not opts.bypassIFrames
+        and playerActor
+        and (playerActor.hurtIFrame or 0) > 0
+    then
+        return false, self.countdown:getRemaining()
+    end
+
+    amount = amount or 0
+    self.countdown:damage(amount)
+
+    if playerActor and not opts.bypassIFrames then
+        playerActor.hurtIFrame = playerActor.hurtIFrameDuration or player.HURT_IFRAME
+    end
+
+    if self.countdown:isExpired() then
+        self.extracted = true
+        self.countdown:pause()
+        print("[countdown] EXTRACTED — plague time exhausted")
+    end
+
+    return true, self.countdown:getRemaining()
+end
+
 -- Frame order during gameplay:
 --   1) actors setLinearVelocity / sync sensors (no manual pos writes)
 --   2) physics.world:update(dt)
@@ -96,6 +129,8 @@ function state:update(dt)
         end
 
         physics.update(dt)
+        -- Safety net: kinematic enemies never resolve vs Wall — re-clamp every frame.
+        physics.clampAllEnemiesToPlayable()
 
         if not self.extracted and playerActor and playerActor.pollAttackHits then
             playerActor:pollAttackHits()
@@ -375,6 +410,11 @@ function love.load()
     -- Sword and its split ribbon layers are separate coordinated scene actors.
     state:init(playerActor, swordActor, trailBehind, trailFront, unpack(enemies))
 
+    -- Combat → countdown: player hits call into state (keeps drain logic centralized).
+    playerActor.applyDamage = function(amount, source, opts)
+        return state:applyPlayerDamage(amount, source, opts)
+    end
+
     physics_selftest.run(playerActor, enemies)
 end
 
@@ -423,18 +463,10 @@ function love.keypressed(k)
         end
         physics_selftest.run(state:getActor("player"), enemies)
     elseif k == "h" then
-        -- Debug plague damage (real enemy drain wires next).
-        if state.countdown and not state.extracted then
-            state.countdown:damage(3)
-            print(string.format(
-                "[countdown] damage 3.0 → %.1fs left",
-                state.countdown:getRemaining()
-            ))
-            if state.countdown:isExpired() then
-                state.extracted = true
-                state.countdown:pause()
-                print("[countdown] EXTRACTED — plague time exhausted")
-            end
+        -- Debug plague damage (bypasses i-frames for tuning).
+        local ok, left = state:applyPlayerDamage(3, "debug", { bypassIFrames = true })
+        if ok then
+            print(string.format("[countdown] damage 3.0 → %.1fs left", left))
         end
     elseif k == "space" then
         if not state.extracted then
