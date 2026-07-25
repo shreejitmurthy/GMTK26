@@ -118,6 +118,19 @@ function atmosphere.notifyNestCleansed(nest)
     particles = kept
 end
 
+--- Short ash/dust puff at a world point (collapse cracks / drops).
+function atmosphere.burstAt(x, y, kind, count)
+    kind = kind or "ash"
+    count = count or 4
+    for _ = 1, count do
+        spawnParticle(
+            kind,
+            x + (love.math.random() - 0.5) * 10,
+            y + (love.math.random() - 0.5) * 10
+        )
+    end
+end
+
 --- ratio: countdown:getRatio(); nests: runtime nest list (for cleansed flags).
 function atmosphere.update(dt, plagueRatio, nests)
     t = t + dt

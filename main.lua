@@ -10,6 +10,7 @@ local countdown = require "scripts.countdown"
 local game_map = require "scripts.game_map"
 local atmosphere = require "scripts.atmosphere"
 local nests = require "scripts.nests"
+local collapse = require "scripts.collapse"
 require "scripts.player"
 require "scripts.sword"
 require "scripts.slash_trail"
@@ -45,7 +46,16 @@ state = {
     hudLabelFont = nil,
     hudHelpFont = nil,
     gameMap = nil,
+    extractReason = nil,
 }
+
+function state.onAfterFloor()
+    collapse.drawFloorFx()
+end
+
+function state.onAfterActors()
+    collapse.drawFalling()
+end
 
 -- STATE
 function state:init(...)
@@ -202,6 +212,8 @@ function state:update(dt)
 
         if not frozen then
             nests.update(self, dt)
+            collapse.update(dt, self)
+            frozen = self.extracted or self.sectorCleared
             for _, actor in ipairs(self.actors) do
                 if actor.label == "enemy" then
                     actor:update(dt, playerActor)
@@ -236,7 +248,8 @@ function state:update(dt)
         end
 
         if playerActor and cam then
-            cam:lookAt(playerActor.pos.x, playerActor.pos.y)
+            local rx, ry = collapse.getRumble()
+            cam:lookAt(playerActor.pos.x + rx, playerActor.pos.y + ry)
         end
     end
 end
@@ -512,8 +525,11 @@ function state:drawHud()
         love.graphics.print(msg, (sw - tw) / 2, sh / 2 - th / 2)
         love.graphics.setColor(0.9, 0.7, 0.55, 0.9)
         love.graphics.setFont(self.hudLabelFont or prevFont)
+        local subtitle = self.extractReason == "abyss"
+            and "The courtyard gave way beneath you"
+            or string.format("Nests remaining: %d", nests.remaining(self.nests))
         love.graphics.printf(
-            string.format("Nests remaining: %d", nests.remaining(self.nests)),
+            subtitle,
             0,
             sh / 2 + th * 0.55,
             sw,
@@ -541,7 +557,7 @@ function state:drawHud()
         sh - 40
     )
     love.graphics.print(
-        "WASD move · Space/Click swing · Hold E cleanse · H -3s · G +5s · Esc quit",
+        "WASD · Space swing · Hold E cleanse · V crack test · H/G time · Esc",
         10,
         sh - 24
     )
@@ -633,9 +649,11 @@ function love.load(args)
     state.nests = nests.fromMap(state.gameMap)
     state.sectorCleared = false
     state.extracted = false
+    state.extractReason = nil
     state.floats = {}
     state.hintTime = 4
     atmosphere.load(state.nests)
+    collapse.load(state.gameMap, state.nests)
     local playable = game_map.getPlayableArea(state.gameMap)
     physics.setPlayableArea(
         playable.x,
@@ -785,6 +803,10 @@ function love.keypressed(k)
         if state.countdown and not state.extracted then
             state.countdown:addTime(5)
             print(string.format("[countdown] +5s → %.1fs left", state.countdown:getRemaining()))
+        end
+    elseif k == "v" then
+        if not state.extracted and not state.sectorCleared then
+            collapse.debugCrackNearPlayer(state)
         end
     elseif k == "space" then
         if not state.extracted and not state.sectorCleared then

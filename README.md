@@ -18,6 +18,7 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
 - **STI map:** `res/maps/map.lua` — one Victorian decaying courtyard; districts by props (Ash Market / Plague Well / Watch Yard)
 - **Nest cleanse loop** (`scripts/nests.lua`): stand in nest + **Hold E** for 2s to seal (serum cost 2s once); kill infected → `+1s`; 3/3 → **SECTOR CLEANSED**; timer 0 → **EXTRACTED**
+- **Courtyard collapse** (`scripts/collapse.lua`): tiles crack (1s telegraph) then fall into black abyss; standing on a fallen cell → **EXTRACTED**. Fountain + nest centers never fall.
 
 Physics loop: input → normalize → `setLinearVelocity` → swing pose + sync sensors → `world:update(dt)` → hit enter poll → sync draw/camera from collider.
 
@@ -143,6 +144,20 @@ love . -- --patch-nests
 
 **Tiled:** edit `res/maps/map.tmx` → Export As `map.lua`. Keep fountain stamp + Circle Colliders ellipse.
 
+### Courtyard collapse (`scripts/collapse.lua`)
+
+As plague tolerance fails, floor tiles literally fall away — unique pressure vs closing walls.
+
+| Rule | Detail |
+|---|---|
+| Telegraph | **1.0s** crack overlay + shake; death only after the tile falls |
+| Drop | Tile quad falls off-screen; cell becomes pure-black abyss |
+| Death | Player center on a **fallen** cell → **EXTRACTED** (abyss). Not a soft shove. |
+| Protected | Fountain stamp (cols 13–16, rows 10–13) + nest centers (±1 tile) never collapse |
+| Fairness | Never starts cracking under the player (Chebyshev ≥ 2). Nest corridors protected until ratio &lt; 0.35. Cap ~48% fallen. |
+| Escalation | First wave at **t=20s** or ratio &lt; 0.85 (whichever first). Wave size/interval scale with `(1 - ratio)` + uncleansed nests. |
+| Debug | **V** forces one crack near the player (not underfoot) |
+
 ### Plague timer (health)
 
 - Module: `scripts/countdown.lua`, owned by gameplay as `state.countdown`.
@@ -151,7 +166,7 @@ love . -- --patch-nests
 - Feedback: `:damage()` sets `damagePulse` (~0.4s) — digit/fuse flash + floating `-Xs`. Ratio < 0.15 → subtle screen-edge tint.
 - Urgency: warmer tint below 25% remaining; subtle pulse below 10%.
 - **Combat drain (done):** `player:onHitByEnemy` → `state:applyPlayerDamage(amount, source)` → `countdown:damage`. Default hit: **`PLAYER_HIT_DAMAGE_SECONDS` / `player.HIT_DAMAGE_SECONDS` = 5**. I-frames: **`PLAYER_HURT_IFRAME` / `player.HURT_IFRAME` = 0.6s** (`player.hurtIFrame`). Player sword → enemy does **not** drain the player timer.
-- **Debug:** press **H** → `applyPlayerDamage(3, "debug", { bypassIFrames = true })`. Console: `[countdown] damage 3.0 → X.Xs left`.
+- **Debug:** **H** → −3s (bypass i-frames); **G** → +5s; **V** → force one floor crack near the player.
 - At 0: `state.extracted = true`, show **EXTRACTED**, freeze player/enemy AI, stop further damage; Esc still quits.
 
 ### Later (do not build full systems now)

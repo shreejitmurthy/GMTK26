@@ -325,6 +325,11 @@ function game_map.drawWithActors(map, drawActors, context)
 
     game_map.drawBelowActors(map)
 
+    -- Optional: abyss voids + crack telegraph after floor/decals/props.
+    if context and context.onAfterFloor then
+        context.onAfterFloor(context)
+    end
+
     local perspectiveLayerName = game_map.PERSPECTIVE_ACTOR_LAYERS[1]
     local fountainGroundDepth =
         game_map.getLayerGroundDepth(map, perspectiveLayerName)
@@ -332,6 +337,11 @@ function game_map.drawWithActors(map, drawActors, context)
     drawActors(context, fountainGroundDepth, false)
     game_map.drawPerspectiveActors(map)
     drawActors(context, fountainGroundDepth, true)
+
+    -- Optional: falling tile quads above scenery (does not split fountain sort).
+    if context and context.onAfterActors then
+        context.onAfterActors(context)
+    end
 end
 
 return game_map
