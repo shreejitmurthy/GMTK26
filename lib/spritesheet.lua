@@ -51,6 +51,19 @@ function newSpritesheet(spritesheet_path, frameWidth, frameHeight, left, top)
     return self
 end
 
+--- Create another frame-grid view over the same loaded image.
+--- Useful when rows in one image use different frame dimensions.
+function Spritesheet:newView(frameWidth, frameHeight, left, top)
+    return setmetatable({
+        path = self.path,
+        image = self.image,
+        frameWidth = frameWidth or self.frameWidth,
+        frameHeight = frameHeight or self.frameHeight,
+        left = left or self.left,
+        top = top or self.top,
+    }, Spritesheet)
+end
+
 function Spritesheet:getFrames(sx, sy, fx, fy)
     local frames = {}
     for y = sy, fy do

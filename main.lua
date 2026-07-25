@@ -13,7 +13,7 @@ require "scripts.slash_trail"
 require "scripts.enemy"
 local physics_selftest = require "scripts.physics_selftest"
 
-local zoom = 2
+local zoom = 3
 ZOOM_MULT = 0.1
 ZOOM_MAX = 2
 ZOOM_MIN = 0.1

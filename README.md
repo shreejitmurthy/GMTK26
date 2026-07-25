@@ -6,7 +6,7 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 
 - Grey room + camera follow
 - Windfield world (`scripts/physics.lua`): **zero gravity**, collision classes, stub arena walls
-- Player (`scripts/player.lua`): WASD + arrows, **normalized** diagonal velocity, collider is position source of truth
+- Player (`scripts/player.lua`): WASD + arrows, **normalized** diagonal velocity, collider is position source of truth, and directional run/idle animations from `plagueDoctorSheet.png`
 - Sword (`scripts/sword.lua`): separate actor using frame one of the 16×16 sword atlas; a continuous outward turnover finishes in mirrored 15° resting tilts without crossing the player
 - Slash trail (`scripts/slash_trail.lua`): procedural fading ribbon generated from the sword's hilt/tip pose and split across behind/front player layers
 - Enemies: soft barriers + `EnemyHit` sensor hurtboxes; resistance increases near their body and contact permits only a tiny, momentum-free nudge
@@ -15,7 +15,7 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 - Four enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper**, **ranger** — polished locomotion; ranger cornered melee drains the plague timer
 - **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**) with a thin **PLAGUE TOLERANCE** fuse. Enemy hits → `state:applyPlayerDamage` → `countdown:damage` (**5s** default, **0.6s** i-frames). **H** debug-damages **3s** (bypasses i-frames). Player sword hits do **not** drain your timer. At 0 → **EXTRACTED**
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
-- STI / full animations: not wired yet
+- STI: not wired yet
 
 Physics loop: input → normalize → `setLinearVelocity` → swing pose + sync sensors → `world:update(dt)` → hit enter poll → sync draw/camera from collider.
 

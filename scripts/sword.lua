@@ -188,8 +188,8 @@ function sword:draw()
         self.pos.x,
         self.pos.y,
         self.rotation,
-        2,
-        2,
+        1,
+        1,
         self.frameW / 2,
         self.frameH / 2
     )

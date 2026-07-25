@@ -16,26 +16,73 @@ local SWING_SETTLE_DURATION = 0.16
 local SWING_STRETCH = math.rad(10)
 local SWING_ARC = math.pi + SWING_STRETCH * 2
 local SWING_START = -math.pi / 2 - SWING_STRETCH
+local RIGHT_BOTTOM_SWING_LIMIT = 0.9
 local SWORD_LENGTH = 22
 local SWING_WINDUP_CONTROL = 0.1
 local SWING_END_WEIGHT = 0.2
-local SWORD_HILT_GAP = 12
+local SWORD_HILT_GAP = 0
 local SWORD_HORIZONTAL_REST_TILT = math.rad(15)
 local SWORD_VERTICAL_REST_TILT = math.rad(35)
 local ENEMY_HIT_FLASH_DURATION = 0.18
 local PLAYER_SHEET_PATH = "res/images/plagueDoctorSheet.png"
-local PLAYER_FRAME_W = 25
-local PLAYER_FRAME_H = 32
+local PLAYER_MAX_FRAME_W = 25
+local PLAYER_MAX_FRAME_H = 32
 local PLAYER_FRAME_COUNT = 6
+local PLAYER_SHEET_ROW_HEIGHT = 32
 local PLAYER_RUN_FRAME_DELAY = 0.1
 local PLAYER_IDLE_FRAME_DELAY = 0.3
 
-local function newDirectionalAnimation(spritesheet, row, delay)
-    return spritesheet:newAnimation(
-        { row, 1 },
-        { row, PLAYER_FRAME_COUNT },
-        delay
+-- Every row occupies 32 pixels in the combined image. Shorter frames are
+-- bottom-aligned within that row, so their top offset includes the difference.
+local PLAYER_ANIMATION_SPECS = {
+    run = {
+        right = { row = 1, width = 25, height = 32 },
+        left = { row = 2, width = 25, height = 32 },
+        down = { row = 3, width = 17, height = 30 },
+        up = { row = 4, width = 17, height = 31 },
+    },
+    idle = {
+        right = { row = 5, width = 20, height = 30 },
+        left = { row = 6, width = 20, height = 30 },
+        down = { row = 7, width = 19, height = 31 },
+        -- Row eight is another up-facing idle until the art is corrected.
+        up = { row = 8, width = 19, height = 31 },
+    },
+}
+
+local function newDirectionalAnimation(baseSpritesheet, spec, delay)
+    local rowTop = (spec.row - 1) * PLAYER_SHEET_ROW_HEIGHT
+        + (PLAYER_SHEET_ROW_HEIGHT - spec.height)
+    local spritesheet = baseSpritesheet:newView(
+        spec.width,
+        spec.height,
+        0,
+        rowTop
     )
+
+    return {
+        spritesheet = spritesheet,
+        animation = spritesheet:newAnimation(
+            { 1, 1 },
+            { 1, PLAYER_FRAME_COUNT },
+            delay
+        ),
+    }
+end
+
+local function newPlayerAnimations(spritesheet)
+    local animations = { run = {}, idle = {} }
+
+    for direction, spec in pairs(PLAYER_ANIMATION_SPECS.run) do
+        animations.run[direction] =
+            newDirectionalAnimation(spritesheet, spec, PLAYER_RUN_FRAME_DELAY)
+    end
+    for direction, spec in pairs(PLAYER_ANIMATION_SPECS.idle) do
+        animations.idle[direction] =
+            newDirectionalAnimation(spritesheet, spec, PLAYER_IDLE_FRAME_DELAY)
+    end
+
+    return animations
 end
 
 local function animationDirection(dx, dy)
@@ -165,29 +212,17 @@ function player:new(x, y)
 
     p.spritesheet = newSpritesheet(
         PLAYER_SHEET_PATH,
-        PLAYER_FRAME_W,
-        PLAYER_FRAME_H
+        PLAYER_MAX_FRAME_W,
+        PLAYER_MAX_FRAME_H
     )
     p.img = p.spritesheet.image
-    p.spriteW = PLAYER_FRAME_W
-    p.spriteH = PLAYER_FRAME_H
-    p.animations = {
-        run = {
-            right = newDirectionalAnimation(p.spritesheet, 1, PLAYER_RUN_FRAME_DELAY),
-            left = newDirectionalAnimation(p.spritesheet, 2, PLAYER_RUN_FRAME_DELAY),
-            down = newDirectionalAnimation(p.spritesheet, 3, PLAYER_RUN_FRAME_DELAY),
-            up = newDirectionalAnimation(p.spritesheet, 4, PLAYER_RUN_FRAME_DELAY),
-        },
-        idle = {
-            right = newDirectionalAnimation(p.spritesheet, 5, PLAYER_IDLE_FRAME_DELAY),
-            left = newDirectionalAnimation(p.spritesheet, 6, PLAYER_IDLE_FRAME_DELAY),
-            up = newDirectionalAnimation(p.spritesheet, 7, PLAYER_IDLE_FRAME_DELAY),
-            -- Row eight currently contains another up-facing idle animation.
-            down = newDirectionalAnimation(p.spritesheet, 8, PLAYER_IDLE_FRAME_DELAY),
-        },
-    }
+    p.spriteW = PLAYER_MAX_FRAME_W
+    p.spriteH = PLAYER_MAX_FRAME_H
+    p.animations = newPlayerAnimations(p.spritesheet)
     p.animationDirection = "right"
-    p.current_animation = p.animations.idle[p.animationDirection]
+    p.current_animation_data = p.animations.idle[p.animationDirection]
+    p.current_animation = p.current_animation_data.animation
+    p.current_spritesheet = p.current_animation_data.spritesheet
     p.speed = 120
     p.controls = {
         left  = { "a", "left" },
@@ -212,6 +247,8 @@ function player:new(x, y)
     p.swingBaseAngle = 0
     p.swingDirection = 1
     p.nextSwingDirection = 1
+    p.swingArcStart = 0
+    p.swingArcEnd = 1
     p.swingSerial = 0
     p.hasSwung = false
     p.swingHitEnemies = {}
@@ -291,10 +328,12 @@ end
 
 --- Sword pose from swing progress (0..1). Angle+offset relative to facing at swing start.
 function player:updateSwordPose(progress)
-    local arcProgress = progress
+    local arcStart = self.swingArcStart or 0
+    local arcEnd = self.swingArcEnd or 1
     if self.swingDirection < 0 then
-        arcProgress = 1 - progress
+        arcStart, arcEnd = arcEnd, arcStart
     end
+    local arcProgress = arcStart + (arcEnd - arcStart) * progress
 
     local orbitAngle = player.swingAngle(self.swingBaseAngle, arcProgress)
     local bladeAngle = player.wristAngle(self.swingBaseAngle, arcProgress)
@@ -387,6 +426,7 @@ function player:startSwing(targetX, targetY)
 
     self.aimDirection.x = fx
     self.aimDirection.y = fy
+    self.animationDirection = animationDirection(fx, fy)
     self.swingDirection = self.nextSwingDirection
     self.nextSwingDirection = -self.nextSwingDirection
     self.swingSerial = self.swingSerial + 1
@@ -394,6 +434,13 @@ function player:startSwing(targetX, targetY)
     self.swinging = true
     self.swingT = 0
     self.swingBaseAngle = math.atan2(fy, fx)
+    self.swingArcStart = 0
+    self.swingArcEnd = 1
+    if fx > 0 and math.abs(fx) >= math.abs(fy) then
+        -- For a rightward attack, progress 1 is the bottom endpoint. Pull both
+        -- its hilt orbit and wrist turnover in while leaving the up endpoint.
+        self.swingArcEnd = RIGHT_BOTTOM_SWING_LIMIT
+    end
     self.swingHitEnemies = {}
 
     self:updateSwordPose(0)
@@ -478,13 +525,17 @@ function player:update(dt)
     if input.x ~= 0 or input.y ~= 0 then
         self.direction.x = input.x
         self.direction.y = input.y
-        self.animationDirection = animationDirection(input.x, input.y)
+        if not self.swinging then
+            self.animationDirection = animationDirection(input.x, input.y)
+        end
     end
 
     local animationState =
         (input.x ~= 0 or input.y ~= 0) and "run" or "idle"
-    self.current_animation =
+    self.current_animation_data =
         self.animations[animationState][self.animationDirection]
+    self.current_animation = self.current_animation_data.animation
+    self.current_spritesheet = self.current_animation_data.spritesheet
     self.current_animation:update(dt)
 
     local vx, vy = player.normalizedVelocity(input.x, input.y, self.speed)
@@ -527,10 +578,12 @@ function player:draw()
     else
         love.graphics.setColor(1, 1, 1, 1)
     end
-    self.spritesheet:draw(
+    local frameWidth = self.current_spritesheet.frameWidth
+    local frameHeight = self.current_spritesheet.frameHeight
+    self.current_spritesheet:draw(
         self.current_animation,
-        self.pos.x - self.spriteW / 2,
-        self.pos.y - self.spriteH / 2
+        self.pos.x - frameWidth / 2,
+        self.pos.y + self.spriteH / 2 - frameHeight
     )
     love.graphics.setColor(1, 1, 1, 1)
 end
