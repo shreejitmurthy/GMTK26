@@ -246,12 +246,13 @@ function physics.slideEnemyAgainstWalls(enemyCollider, vx, vy, dt)
     return vx, vy
 end
 
---- Steer kinematic enemies apart (they pass through each other in Box2D).
-function physics.applyEnemySeparation(enemyCollider, vx, vy)
+-- Light pack spacing: only when centers are closer than minSep.
+physics.enemyMinSep = 18
+
+--- Add a small lateral push-apart into AI velocity (caller re-normalizes).
+function physics.applyEnemySeparation(enemyCollider, vx, vy, minSep)
+    minSep = minSep or physics.enemyMinSep
     local x, y = enemyCollider:getX(), enemyCollider:getY()
-    local hw = enemyCollider.halfWidth or 7
-    local hh = enemyCollider.halfHeight or 7
-    local sepRadius = (hw + hh) * 1.6
     local sepX, sepY = 0, 0
 
     for _, other in ipairs(physics.enemies) do
@@ -259,12 +260,11 @@ function physics.applyEnemySeparation(enemyCollider, vx, vy)
             local ox, oy = other:getX(), other:getY()
             local dx, dy = x - ox, y - oy
             local dist = math.sqrt(dx * dx + dy * dy)
-            if dist > 0 and dist < sepRadius then
-                local weight = (sepRadius - dist) / sepRadius
+            if dist > 0 and dist < minSep then
+                local weight = (minSep - dist) / minSep
                 sepX = sepX + (dx / dist) * weight
                 sepY = sepY + (dy / dist) * weight
             elseif dist == 0 then
-                -- Identical centers: break the tie with a stable hash-ish offset.
                 sepX = sepX + 1
             end
         end
@@ -272,21 +272,28 @@ function physics.applyEnemySeparation(enemyCollider, vx, vy)
 
     local sepLen = math.sqrt(sepX * sepX + sepY * sepY)
     if sepLen > 0 then
-        -- Blend: separation is strong enough to prevent stacking while chasing.
-        local sepSpeed = 80
-        vx = vx + (sepX / sepLen) * sepSpeed * math.min(1, sepLen)
-        vy = vy + (sepY / sepLen) * sepSpeed * math.min(1, sepLen)
+        local speed = math.sqrt(vx * vx + vy * vy)
+        -- Keep separation light so packs spread without dominating chase/flee intent.
+        local sepBoost = math.max(30, speed) * 0.4
+        vx = vx + (sepX / sepLen) * sepBoost * math.min(1, sepLen)
+        vy = vy + (sepY / sepLen) * sepBoost * math.min(1, sepLen)
     end
 
     return vx, vy
 end
 
 --- Separation + wall slide, then clamp to maxSpeed (no √2 boost from blending).
+--- Idle input (near-zero velocity) skips separation so stopped enemies do not drift.
 function physics.constrainEnemyMotion(enemyCollider, vx, vy, dt, maxSpeed)
+    local inputSpeed = math.sqrt(vx * vx + vy * vy)
+    if inputSpeed < 0.01 then
+        return 0, 0
+    end
+
     vx, vy = physics.applyEnemySeparation(enemyCollider, vx, vy)
     if maxSpeed and maxSpeed > 0 then
         local speed = math.sqrt(vx * vx + vy * vy)
-        if speed > maxSpeed then
+        if speed > 0 then
             vx = vx / speed * maxSpeed
             vy = vy / speed * maxSpeed
         end
@@ -358,7 +365,87 @@ function physics.spawnTestArena(cx, cy)
     physics.addWall(cx - 10, cy - 70, 20, 40)
     physics.addWall(cx + 40, cy + 20, 48, 16)
 
+    physics.arena = {
+        cx = cx,
+        cy = cy,
+        left = left,
+        top = top,
+        width = width,
+        height = height,
+        thickness = thickness,
+        innerLeft = left + thickness,
+        innerTop = top + thickness,
+        innerRight = left + width - thickness,
+        innerBottom = top + height - thickness,
+    }
+
     return physics.getWallCount()
+end
+
+local function spawnBlockedAt(cx, cy, halfW, halfH)
+    if not physics.world then
+        return true
+    end
+    local hits = physics.world:queryRectangleArea(
+        cx - halfW,
+        cy - halfH,
+        halfW * 2,
+        halfH * 2,
+        { "Wall" }
+    )
+    return #hits > 0
+end
+
+--- Pick a clear point inside the stub arena, away from walls / player / prior spawns.
+function physics.pickSpawnPoint(opts)
+    opts = opts or {}
+    local arena = physics.arena
+    if not arena then
+        return opts.fallbackX or 200, opts.fallbackY or 150
+    end
+
+    local pad = opts.pad or 28
+    local halfW = opts.halfW or 8
+    local halfH = opts.halfH or 8
+    local minPlayerDist = opts.minPlayerDist or 55
+    local minEnemyDist = opts.minEnemyDist or 40
+    local playerPos = opts.playerPos
+    local avoid = opts.avoid or {}
+
+    local x0 = arena.innerLeft + pad
+    local y0 = arena.innerTop + pad
+    local x1 = arena.innerRight - pad
+    local y1 = arena.innerBottom - pad
+
+    for _ = 1, 48 do
+        local x = x0 + love.math.random() * (x1 - x0)
+        local y = y0 + love.math.random() * (y1 - y0)
+        if not spawnBlockedAt(x, y, halfW, halfH) then
+            local ok = true
+            if playerPos then
+                local dx, dy = x - playerPos.x, y - playerPos.y
+                if math.sqrt(dx * dx + dy * dy) < minPlayerDist then
+                    ok = false
+                end
+            end
+            if ok then
+                for _, p in ipairs(avoid) do
+                    local dx, dy = x - p.x, y - p.y
+                    if math.sqrt(dx * dx + dy * dy) < minEnemyDist then
+                        ok = false
+                        break
+                    end
+                end
+            end
+            if ok then
+                return x, y
+            end
+        end
+    end
+
+    -- Fallback: arena center offset (may still be clearer than a wall).
+    return arena.cx + (opts.fallbackOffsetX or 0),
+        arena.cy + (opts.fallbackOffsetY or 40)
 end
 
 return physics

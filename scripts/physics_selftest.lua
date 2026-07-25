@@ -161,25 +161,33 @@ function selftest.run(playerActor, enemyActors)
         local c = byType.chaser
         allOk = check("chaser default fields",
             nearlyEqual(c.speed, 75) and nearlyEqual(c.aggroRange, 140)
-                and nearlyEqual(c.stopDistance, 22),
-            string.format("speed=%.0f aggro=%.0f stop=%.0f",
-                c.speed or -1, c.aggroRange or -1, c.stopDistance or -1)) and allOk
+                and nearlyEqual(c.stopDistance, 28)
+                and nearlyEqual(c.stopDeadzone, 6),
+            string.format("speed=%.0f aggro=%.0f stop=%.0f dead=%.0f",
+                c.speed or -1, c.aggroRange or -1,
+                c.stopDistance or -1, c.stopDeadzone or -1)) and allOk
     end
     if byType.fleer then
         local f = byType.fleer
         allOk = check("fleer default fields",
-            nearlyEqual(f.speed, 95) and nearlyEqual(f.fleeRange, 90),
-            string.format("speed=%.0f flee=%.0f", f.speed or -1, f.fleeRange or -1)) and allOk
+            nearlyEqual(f.speed, 95) and nearlyEqual(f.fleeRange, 90)
+                and nearlyEqual(f.fleeDeadzone, 10),
+            string.format("speed=%.0f flee=%.0f dead=%.0f",
+                f.speed or -1, f.fleeRange or -1, f.fleeDeadzone or -1)) and allOk
     end
     if byType.keeper then
         local k = byType.keeper
         allOk = check("keeper default fields",
             nearlyEqual(k.speed, 70) and nearlyEqual(k.aggroRange, 160)
-                and nearlyEqual(k.preferredDistance, 70) and nearlyEqual(k.band, 12),
+                and nearlyEqual(k.preferredDistance, 70) and nearlyEqual(k.band, 18),
             string.format("speed=%.0f aggro=%.0f pref=%.0f band=%.0f",
                 k.speed or -1, k.aggroRange or -1,
                 k.preferredDistance or -1, k.band or -1)) and allOk
     end
+
+    allOk = check("pickSpawnPoint helper exists",
+        type(physics.pickSpawnPoint) == "function"
+            and physics.arena ~= nil) and allOk
 
     -- Diagonal vs cardinal: normalize BEFORE speed (FAIL if √2 speedup).
     local speed = (playerActor and playerActor.speed) or 120

@@ -7,13 +7,15 @@ enemy_types.defaults = {
     chaser = {
         speed = 75,
         aggroRange = 140,
-        stopDistance = 22,
+        stopDistance = 28,
+        stopDeadzone = 6,
         color = { 0.85, 0.35, 0.2 },
         letter = "C",
     },
     fleer = {
         speed = 95,
         fleeRange = 90,
+        fleeDeadzone = 10,
         color = { 0.35, 0.7, 0.4 },
         letter = "F",
     },
@@ -21,15 +23,15 @@ enemy_types.defaults = {
         speed = 70,
         aggroRange = 160,
         preferredDistance = 70,
-        band = 12,
+        band = 18,
         color = { 0.25, 0.45, 0.75 },
         letter = "K",
     },
 }
 
 local AI_FIELDS = {
-    chaser = { "speed", "aggroRange", "stopDistance" },
-    fleer = { "speed", "fleeRange" },
+    chaser = { "speed", "aggroRange", "stopDistance", "stopDeadzone" },
+    fleer = { "speed", "fleeRange", "fleeDeadzone" },
     keeper = { "speed", "aggroRange", "preferredDistance", "band" },
 }
 
@@ -57,6 +59,9 @@ function enemy_types.apply(e, options)
     for _, field in ipairs(AI_FIELDS[typeId]) do
         e[field] = options[field] or defaults[field]
     end
+
+    e._holding = false
+    e._fleeing = false
 end
 
 local function distToPlayer(e, player)
@@ -71,23 +76,47 @@ end
 local function updateChaser(e, dt, player)
     local px, py, dist = distToPlayer(e, player)
     if not dist then
+        e._holding = false
         e:stop(dt)
         return
     end
-    if dist > e.aggroRange or dist <= e.stopDistance then
+    if dist > e.aggroRange then
+        e._holding = false
         e:stop(dt)
-    else
-        e:moveToward(px, py, e.speed, dt)
+        return
     end
+    if dist <= e.stopDistance then
+        e._holding = true
+        e:stop(dt)
+        return
+    end
+    -- Hysteresis: stay stopped until clear of deadzone (kills vibrate at stopDistance).
+    if e._holding and dist < e.stopDistance + e.stopDeadzone then
+        e:stop(dt)
+        return
+    end
+    e._holding = false
+    e:moveToward(px, py, e.speed, dt)
 end
 
 local function updateFleer(e, dt, player)
     local px, py, dist = distToPlayer(e, player)
     if not dist then
+        e._fleeing = false
         e:stop(dt)
         return
     end
+    if e._fleeing then
+        if dist > e.fleeRange + e.fleeDeadzone then
+            e._fleeing = false
+            e:stop(dt)
+        else
+            e:moveAway(px, py, e.speed, dt)
+        end
+        return
+    end
     if dist <= e.fleeRange then
+        e._fleeing = true
         e:moveAway(px, py, e.speed, dt)
     else
         e:stop(dt)
@@ -104,6 +133,7 @@ local function updateKeeper(e, dt, player)
         e:stop(dt)
         return
     end
+    -- Wide band = equilibrium without in/out chatter.
     if dist > e.preferredDistance + e.band then
         e:moveToward(px, py, e.speed, dt)
     elseif dist < e.preferredDistance - e.band then

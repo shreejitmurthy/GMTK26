@@ -124,6 +124,34 @@ function state:drawHud()
             10,
             64
         )
+
+        local counts = { chaser = 0, fleer = 0, keeper = 0 }
+        local nearest = nil
+        local px, py = playerActor.pos.x, playerActor.pos.y
+        for _, actor in ipairs(self.actors) do
+            if actor.label == "enemy" then
+                local t = actor.enemyType
+                if counts[t] ~= nil then
+                    counts[t] = counts[t] + 1
+                end
+                local dx, dy = actor.pos.x - px, actor.pos.y - py
+                local d = math.sqrt(dx * dx + dy * dy)
+                if not nearest or d < nearest then
+                    nearest = d
+                end
+            end
+        end
+        love.graphics.print(
+            string.format(
+                "enemies C:%d F:%d K:%d | nearest: %s",
+                counts.chaser,
+                counts.fleer,
+                counts.keeper,
+                nearest and string.format("%.1f", nearest) or "-"
+            ),
+            10,
+            82
+        )
     end
 end
 
@@ -134,12 +162,27 @@ function love.load()
     physics.spawnTestArena(spawnX, spawnY)
 
     local playerActor = player:new(spawnX, spawnY)
-    -- Inside stub arena (center ~200,150); clear of interior wall blocks.
-    local enemies = {
-        enemy:new(120, 100, { type = "chaser" }),
-        enemy:new(280, 100, { type = "fleer" }),
-        enemy:new(120, 200, { type = "keeper" }),
+
+    -- Soak test: 2 of each type at safe arena points (away from walls/player).
+    local placed = {}
+    local spawnOrder = {
+        "chaser", "fleer", "keeper",
+        "chaser", "fleer", "keeper",
     }
+    local enemies = {}
+    for i, typeId in ipairs(spawnOrder) do
+        local x, y = physics.pickSpawnPoint({
+            playerPos = { x = playerActor.pos.x, y = playerActor.pos.y },
+            avoid = placed,
+            minPlayerDist = 55,
+            minEnemyDist = 40,
+            fallbackOffsetX = (i - 3.5) * 28,
+            fallbackOffsetY = 50,
+        })
+        placed[#placed + 1] = { x = x, y = y }
+        enemies[#enemies + 1] = enemy:new(x, y, { type = typeId })
+    end
+
     cam = camera(playerActor.pos.x, playerActor.pos.y, zoom)
 
     -- Push actors we want in the scene (player + enemies).

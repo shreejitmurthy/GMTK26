@@ -9,7 +9,7 @@ Top-down hack-and-slash jam game. **Countdown timer is health** (damage later dr
 - Player (`scripts/player.lua`): WASD + arrows, **normalized** diagonal velocity, collider is position source of truth
 - Enemies: soft barriers + `EnemyHit` sensor hurtboxes; resistance increases near their body and contact permits only a tiny, momentum-free nudge
 - Enemies can **move** via shared locomotion (`moveToward` / `moveAway` / `stop`); after intentional AI motion each frame, `pushAnchorX/Y` is refreshed to the collider so soft contact still works and AI is not yanked back to spawn
-- Three enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper** (placeholder colors; art / attacks later)
+- Three enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper** — polished locomotion (separation, hysteresis, safe spawns; art / attacks later)
 - **F1** / backtick toggles collider debug draw (+ C/F/K type letters); **F2** re-runs console PASS/FAIL selftest
 - STI / full animations / damage / countdown UI: not wired yet
 
@@ -75,7 +75,7 @@ enemy:new(x, y, {
     type = "keeper",
     speed = 70,
     preferredDistance = 70,
-    band = 12,
+    band = 18,
     softPadding = 16,
     maxPushDistance = 2,
 })
@@ -83,13 +83,21 @@ enemy:new(x, y, {
 
 | Type | Behavior | Default tunables |
 |---|---|---|
-| `chaser` | Chase when `distance <= aggroRange`; stop inside `stopDistance`; idle outside aggro | speed 75, aggroRange 140, stopDistance 22 |
-| `fleer` | Run away when `distance <= fleeRange`; idle farther out; never chases | speed 95, fleeRange 90 |
-| `keeper` | Hold ring at `preferredDistance ± band` while in `aggroRange`; idle outside aggro | speed 70, aggroRange 160, preferredDistance 70, band 12 |
+| `chaser` | Chase when `distance <= aggroRange`; stop inside `stopDistance` (+ deadzone hysteresis); idle outside aggro | speed 75, aggroRange 140, stopDistance 28, stopDeadzone 6 |
+| `fleer` | Run away when `distance <= fleeRange` (+ fleeDeadzone hysteresis); idle farther out; never chases | speed 95, fleeRange 90, fleeDeadzone 10 |
+| `keeper` | Hold ring at `preferredDistance ± band` while in `aggroRange`; idle outside aggro | speed 70, aggroRange 160, preferredDistance 70, band 18 |
 
 Placeholder draw colors differ per type; F1/DEBUG shows a tiny **C** / **F** / **K** above each enemy. Art assets and enemy attacks still later.
 
 **Soft-anchor rule:** when an enemy intentionally moves, every frame after setting motion set `collider.pushAnchorX/Y` to the current collider position (via `enemy:refreshPushAnchor`).
+
+### Enemy AI
+Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:new(x, y, { type=..., speed=..., ... })`.
+
+- **Speeds / ranges:** raise `speed` for snappier pressure; widen `aggroRange` / `fleeRange` so types engage sooner; grow `stopDistance` / `band` / `*Deadzone` if you see vibrate at equilibrium.
+- **Pack spacing:** `physics.enemyMinSep` (~18) — light lateral push while moving so blobs don't stack. Idle enemies hard-zero velocity (no drift).
+- **Spawns:** `physics.pickSpawnPoint` places enemies inside arena bounds away from walls/player.
+- **Known non-goals:** no pathfinding around interior blocks (sliding along walls via velocity is OK); no enemy attacks/damage/art yet.
 
 ### World update
 - Call **`world:update(dt)` every frame during gameplay** (via `physics.update`). Skipping this breaks collision and movement.
@@ -126,7 +134,7 @@ Pass/fail against a playable build:
 1. Run the game: `love .` from the project root.
 2. On load, console should print `[physics_selftest] ALL PASS` (or press **F2** to re-run).
 3. Move with **WASD** and **arrow keys**. Confirm smooth top-down motion and **no gravity drift** when idle.
-4. Walk into stub arena walls / interior blocks: walls stop immediately. Approach soft contact still resists and may nudge up to 3px without launching. Playtest types: orange **chaser** pressures in range; green **fleer** runs when close; blue **keeper** holds a ring distance.
+4. Walk into stub arena walls / interior blocks: walls stop immediately. Soft contact still resists without launching. Soak spawn is **2 of each** type — orange pressures, green flees, blue holds a ring; packs should not fuse or vibrate at stop distances.
 5. Press **F1** (or **\`**): collider outlines + tiny **C/F/K** letters; HUD shows collider pos and **velocity magnitude `|v|`**.
 6. **Swing / hitbox test:** stand near an enemy, press **Space** or **left-click**. A short decoupled sword arc plays (placeholder line). F1 shows `PlayerAttack` sweeping with the sword; idle = no attack sensor. On overlap enter, console prints `[hit] PlayerAttack entered EnemyHit (...)` (once per enemy per swing).
 7. **Diagonal speed check:** hold **Right** only and note `|v|` in the debug HUD; then hold **Up+Right**. Magnitudes must match (within ~1%). If diagonal is ~1.41× faster, normalization is broken (FAIL).

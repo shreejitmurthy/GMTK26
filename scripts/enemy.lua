@@ -31,6 +31,7 @@ function enemy:new(x, y, options)
     setmetatable(e, { __index = enemy })
 
     enemy_types.apply(e, options)
+    e.facing = { x = 1, y = 0 }
 
     if love.filesystem.getInfo("res/images/enemy.png") then
         e.img = love.graphics.newImage("res/images/enemy.png")
@@ -86,14 +87,29 @@ function enemy:vecAway(tx, ty)
     return -dx, -dy
 end
 
+function enemy:updateFacingFromVelocity(vx, vy)
+    local speed = math.sqrt(vx * vx + vy * vy)
+    if speed > 1 then
+        self.facing.x = vx / speed
+        self.facing.y = vy / speed
+    end
+end
+
+function enemy:applyVelocity(vx, vy)
+    self.collider:setLinearVelocity(vx, vy)
+    self:updateFacingFromVelocity(vx, vy)
+    if math.abs(vx) > 0.01 or math.abs(vy) > 0.01 then
+        self:refreshPushAnchor()
+    end
+    self:syncHurtbox()
+end
+
 function enemy:moveToward(tx, ty, speed, dt)
     speed = speed or self.speed
     local dx, dy = self:vecToward(tx, ty)
     local vx, vy = normalizedVelocity(dx, dy, speed)
     vx, vy = physics.constrainEnemyMotion(self.collider, vx, vy, dt, speed)
-    self.collider:setLinearVelocity(vx, vy)
-    self:refreshPushAnchor()
-    self:syncHurtbox()
+    self:applyVelocity(vx, vy)
 end
 
 function enemy:moveAway(tx, ty, speed, dt)
@@ -101,21 +117,12 @@ function enemy:moveAway(tx, ty, speed, dt)
     local dx, dy = self:vecAway(tx, ty)
     local vx, vy = normalizedVelocity(dx, dy, speed)
     vx, vy = physics.constrainEnemyMotion(self.collider, vx, vy, dt, speed)
-    self.collider:setLinearVelocity(vx, vy)
-    self:refreshPushAnchor()
-    self:syncHurtbox()
+    self:applyVelocity(vx, vy)
 end
 
+--- Hard idle: zero kinematic velocity every idle frame (no separation drift).
 function enemy:stop(dt)
-    -- Still separate / unstick from walls while halted so packs do not fuse on the player.
-    local x0, y0 = self.collider:getX(), self.collider:getY()
-    local vx, vy = physics.constrainEnemyMotion(self.collider, 0, 0, dt, self.speed)
-    self.collider:setLinearVelocity(vx, vy)
-    local x1, y1 = self.collider:getX(), self.collider:getY()
-    -- Refresh only when separation/unstick actually moved us; pure idle keeps the soft anchor.
-    if vx ~= 0 or vy ~= 0 or x1 ~= x0 or y1 ~= y0 then
-        self:refreshPushAnchor()
-    end
+    self.collider:setLinearVelocity(0, 0)
     self:syncHurtbox()
 end
 
@@ -140,27 +147,30 @@ end
 
 function enemy:draw()
     if self.img then
+        local flipX = (self.facing and self.facing.x < 0) and -1 or 1
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(
             self.img,
             self.pos.x,
             self.pos.y,
             0,
-            1,
+            flipX,
             1,
             self.img:getWidth() / 2,
             self.img:getHeight() / 2
         )
     else
         local c = self.color or { 0.25, 0.45, 0.7 }
+        local flipX = (self.facing and self.facing.x < 0) and -1 or 1
+        love.graphics.push()
+        love.graphics.translate(self.pos.x, self.pos.y)
+        love.graphics.scale(flipX, 1)
         love.graphics.setColor(c[1], c[2], c[3], 1)
-        love.graphics.rectangle(
-            "fill",
-            self.pos.x - self.hitW / 2,
-            self.pos.y - self.hitH / 2,
-            self.hitW,
-            self.hitH
-        )
+        love.graphics.rectangle("fill", -self.hitW / 2, -self.hitH / 2, self.hitW, self.hitH)
+        -- Tiny facing cue on the "front" edge of the placeholder.
+        love.graphics.setColor(1, 1, 1, 0.55)
+        love.graphics.rectangle("fill", self.hitW / 2 - 3, -2, 3, 4)
+        love.graphics.pop()
         love.graphics.setColor(1, 1, 1, 1)
     end
 
