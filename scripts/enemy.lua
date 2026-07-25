@@ -1,16 +1,15 @@
 -- Enemy: Windfield collider owns position; soft barrier + EnemyHit hurtbox.
--- Shared locomotion helpers here; typed behaviors come later (Prompt 2).
+-- Shared locomotion + typed AI (chaser / fleer / keeper).
 
 require "scripts.actor"
 local physics = require "scripts.physics"
+local enemy_types = require "scripts.enemy_types"
 
 enemy = {}
 setmetatable(enemy, { __index = actor })
 
 local DEFAULT_HIT_W = 14
 local DEFAULT_HIT_H = 14
-local DEFAULT_SPEED = 70
-local CHASE_STOP_DISTANCE = 20
 
 --- Normalize direction, THEN apply speed (same pattern as player.normalizedVelocity).
 local function normalizedVelocity(dx, dy, speed)
@@ -22,7 +21,7 @@ local function normalizedVelocity(dx, dy, speed)
     return dx * speed, dy * speed
 end
 
---- options may include behavior fields (speed, type) and physics soft-contact tuning.
+--- options: { type = "chaser"|"fleer"|"keeper", AI overrides..., physics soft-contact... }
 function enemy:new(x, y, options)
     x = x or 200
     y = y or 150
@@ -31,8 +30,7 @@ function enemy:new(x, y, options)
     local e = actor:new(x, y, "enemy")
     setmetatable(e, { __index = enemy })
 
-    e.speed = options.speed or DEFAULT_SPEED
-    e.type = options.type or "idle"
+    enemy_types.apply(e, options)
 
     if love.filesystem.getInfo("res/images/enemy.png") then
         e.img = love.graphics.newImage("res/images/enemy.png")
@@ -121,21 +119,8 @@ function enemy:stop(dt)
     self:syncHurtbox()
 end
 
---- Temporary chase for locomotion feel only. Prompt 2 replaces with typed behaviors.
 function enemy:update(dt, player)
-    if not player or not player.collider then
-        self:stop(dt)
-        return
-    end
-
-    local px, py = player.collider:getX(), player.collider:getY()
-    local dx, dy = self:vecToward(px, py)
-    local dist = math.sqrt(dx * dx + dy * dy)
-    if dist > CHASE_STOP_DISTANCE then
-        self:moveToward(px, py, self.speed, dt)
-    else
-        self:stop(dt)
-    end
+    enemy_types.update(self, dt, player)
 end
 
 function enemy:syncHurtbox()
@@ -167,8 +152,8 @@ function enemy:draw()
             self.img:getHeight() / 2
         )
     else
-        -- Distinct from player.png placeholder (also red).
-        love.graphics.setColor(0.25, 0.45, 0.7, 1)
+        local c = self.color or { 0.25, 0.45, 0.7 }
+        love.graphics.setColor(c[1], c[2], c[3], 1)
         love.graphics.rectangle(
             "fill",
             self.pos.x - self.hitW / 2,
@@ -177,5 +162,14 @@ function enemy:draw()
             self.hitH
         )
         love.graphics.setColor(1, 1, 1, 1)
+    end
+
+    if (DEBUG or physics.debug) and self.debugLetter then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.print(
+            self.debugLetter,
+            self.pos.x - 3,
+            self.pos.y - self.hitH / 2 - 12
+        )
     end
 end

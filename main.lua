@@ -135,11 +135,10 @@ function love.load()
 
     local playerActor = player:new(spawnX, spawnY)
     -- Inside stub arena (center ~200,150); clear of interior wall blocks.
-    -- Temporary: all enemies chase for locomotion validation (Prompt 2: typed behaviors).
     local enemies = {
-        enemy:new(120, 100),
-        enemy:new(280, 100),
-        enemy:new(120, 200),
+        enemy:new(120, 100, { type = "chaser" }),
+        enemy:new(280, 100, { type = "fleer" }),
+        enemy:new(120, 200, { type = "keeper" }),
     }
     cam = camera(playerActor.pos.x, playerActor.pos.y, zoom)
 

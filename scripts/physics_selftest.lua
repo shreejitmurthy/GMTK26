@@ -143,6 +143,44 @@ function selftest.run(playerActor, enemyActors)
         sample:syncFromCollider()
     end
 
+    -- Typed enemies: chaser / fleer / keeper present with default tunables.
+    local byType = {}
+    for _, e in ipairs(enemyActors) do
+        if e.enemyType then
+            byType[e.enemyType] = e
+        end
+    end
+    allOk = check("spawned enemy types include chaser, fleer, keeper",
+        byType.chaser and byType.fleer and byType.keeper,
+        string.format("chaser=%s fleer=%s keeper=%s",
+            tostring(byType.chaser ~= nil),
+            tostring(byType.fleer ~= nil),
+            tostring(byType.keeper ~= nil))) and allOk
+
+    if byType.chaser then
+        local c = byType.chaser
+        allOk = check("chaser default fields",
+            nearlyEqual(c.speed, 75) and nearlyEqual(c.aggroRange, 140)
+                and nearlyEqual(c.stopDistance, 22),
+            string.format("speed=%.0f aggro=%.0f stop=%.0f",
+                c.speed or -1, c.aggroRange or -1, c.stopDistance or -1)) and allOk
+    end
+    if byType.fleer then
+        local f = byType.fleer
+        allOk = check("fleer default fields",
+            nearlyEqual(f.speed, 95) and nearlyEqual(f.fleeRange, 90),
+            string.format("speed=%.0f flee=%.0f", f.speed or -1, f.fleeRange or -1)) and allOk
+    end
+    if byType.keeper then
+        local k = byType.keeper
+        allOk = check("keeper default fields",
+            nearlyEqual(k.speed, 70) and nearlyEqual(k.aggroRange, 160)
+                and nearlyEqual(k.preferredDistance, 70) and nearlyEqual(k.band, 12),
+            string.format("speed=%.0f aggro=%.0f pref=%.0f band=%.0f",
+                k.speed or -1, k.aggroRange or -1,
+                k.preferredDistance or -1, k.band or -1)) and allOk
+    end
+
     -- Diagonal vs cardinal: normalize BEFORE speed (FAIL if √2 speedup).
     local speed = (playerActor and playerActor.speed) or 120
     local cvx, cvy = player.normalizedVelocity(1, 0, speed)
