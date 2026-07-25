@@ -715,20 +715,90 @@ function physics.addWall(x, y, w, h)
     return wall
 end
 
---- Build walls from STI-like object tables: { x, y, width, height } (and optional shape).
+--- Static ellipse approximation for Tiled oval objects.
+--- Box2D has no ellipse primitive and caps convex polygons at eight vertices.
+function physics.addEllipseWall(object)
+    local vertices = {}
+    local ellipse = object.ellipse
+
+    if ellipse and #ellipse >= 10 then
+        -- STI has already applied layer offsets and object rotation. Its first
+        -- vertex is the center and its final perimeter point duplicates the
+        -- first, so sample eight unique perimeter points.
+        local uniquePerimeterVertices = #ellipse - 2
+        for index = 0, 7 do
+            local vertex = ellipse[
+                2 + math.floor(index * uniquePerimeterVertices / 8)
+            ]
+            vertices[#vertices + 1] = vertex.x
+            vertices[#vertices + 1] = vertex.y
+        end
+    else
+        local x, y = object.x, object.y
+        local radiusX, radiusY = object.width / 2, object.height / 2
+        local centerX, centerY = x + radiusX, y + radiusY
+        local rotation = math.rad(object.rotation or 0)
+        local cosRotation, sinRotation = math.cos(rotation), math.sin(rotation)
+
+        for index = 0, 7 do
+            local angle = index / 8 * math.pi * 2
+            local px = centerX + math.cos(angle) * radiusX
+            local py = centerY + math.sin(angle) * radiusY
+            local dx, dy = px - x, py - y
+            vertices[#vertices + 1] = x + cosRotation * dx - sinRotation * dy
+            vertices[#vertices + 1] = y + sinRotation * dx + cosRotation * dy
+        end
+    end
+
+    local wall = physics.world:newPolygonCollider(vertices)
+    wall:setType("static")
+    wall:setCollisionClass("Wall")
+    wall:setObject(object)
+    wall.mapObject = object
+    physics.walls[#physics.walls + 1] = wall
+    return wall
+end
+
+--- Build walls from STI object tables.
 function physics.addWallsFromObjects(objects)
     if not objects then
-        return
+        return 0
     end
+    local added = 0
     for _, object in ipairs(objects) do
         if not object.shape or object.shape == "rectangle" then
             physics.addWall(object.x, object.y, object.width, object.height)
+            added = added + 1
+        elseif object.shape == "ellipse" then
+            physics.addEllipseWall(object)
+            added = added + 1
         end
     end
+    return added
 end
 
 function physics.getWallCount()
     return #physics.walls
+end
+
+--- Logical map bounds used by kinematic-enemy clamp helpers.
+function physics.setPlayableArea(x, y, w, h)
+    physics.arena = {
+        cx = x + w / 2,
+        cy = y + h / 2,
+        left = x,
+        top = y,
+        width = w,
+        height = h,
+        -- Retained for the existing recovery self-test; map edges themselves
+        -- are logical bounds rather than additional wall fixtures.
+        thickness = 16,
+        innerLeft = x,
+        innerTop = y,
+        innerRight = x + w,
+        innerBottom = y + h,
+    }
+    return physics.arena
 end
 
 --- Draw stub arena walls so solid blockers are visible without F1.

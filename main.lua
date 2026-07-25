@@ -7,6 +7,7 @@ camera = require "lib.camera"
 require "scripts.actor"
 local physics = require "scripts.physics"
 local countdown = require "scripts.countdown"
+local game_map = require "scripts.game_map"
 require "scripts.player"
 require "scripts.sword"
 require "scripts.slash_trail"
@@ -37,6 +38,7 @@ state = {
     hudTimerFont = nil,
     hudLabelFont = nil,
     hudHelpFont = nil,
+    gameMap = nil,
 }
 
 -- STATE
@@ -98,6 +100,10 @@ end
 --   5) camera follows synced player pos
 function state:update(dt)
     if state.gameState == GAME_STATE.GAMEPLAY then
+        if self.gameMap then
+            game_map.update(self.gameMap, dt)
+        end
+
         local playerActor = self:getActor("player")
 
         -- Timer-as-health: always update (pulse decays even after extract).
@@ -148,7 +154,7 @@ function state:update(dt)
     end
 end
 
-function state:drawActors()
+function state:drawActors(perspectiveBoundary, drawInFront)
     local drawList = {}
     for index, sceneActor in ipairs(self.actors) do
         local depth = index
@@ -157,14 +163,33 @@ function state:drawActors()
         elseif sceneActor.pos then
             depth = sceneActor.pos.y
         end
-        drawList[#drawList + 1] = {
-            actor = sceneActor,
-            depth = depth,
-            index = index,
-        }
+
+        local groundDepth = depth
+        if sceneActor.getGroundDepth then
+            groundDepth = sceneActor:getGroundDepth()
+        elseif sceneActor.owner and sceneActor.owner.getGroundDepth then
+            -- Sword and trail actors cross scenery with their player owner.
+            groundDepth = sceneActor.owner:getGroundDepth()
+        end
+
+        local isInFront = perspectiveBoundary
+            and groundDepth >= perspectiveBoundary
+        if perspectiveBoundary == nil or isInFront == drawInFront then
+            drawList[#drawList + 1] = {
+                actor = sceneActor,
+                -- Keep the complete player/sword stack above enemies. Sword,
+                -- player, and trail ordering still comes from their depth values.
+                layer = sceneActor.label == "enemy" and 0 or 1,
+                depth = depth,
+                index = index,
+            }
+        end
     end
 
     table.sort(drawList, function(a, b)
+        if a.layer ~= b.layer then
+            return a.layer < b.layer
+        end
         if a.depth == b.depth then
             return a.index < b.index
         end
@@ -390,6 +415,16 @@ end
 function love.load()
     physics.init()
 
+    state.gameMap = game_map.load("res/maps/map.lua")
+    physics.setPlayableArea(
+        0,
+        0,
+        state.gameMap.width * state.gameMap.tilewidth,
+        state.gameMap.height * state.gameMap.tileheight
+    )
+    local mapColliderCount = game_map.addColliders(state.gameMap, physics)
+    print(string.format("[map] loaded res/maps/map.lua (%d colliders)", mapColliderCount))
+
     -- Plague resistance window (seconds). Timer IS health.
     state.countdown = countdown.new({ duration = 90 })
     state.extracted = false
@@ -399,19 +434,18 @@ function love.load()
     love.graphics.setFont(state.hudHelpFont)
 
     local spawnX, spawnY = 200, 150
-    physics.spawnTestArena(spawnX, spawnY)
 
     local playerActor = player:new(spawnX, spawnY)
     local swordActor = sword:new(playerActor)
     local trailBehind = slashTrail:new(playerActor, true)
     local trailFront = slashTrail:new(playerActor, false)
-    -- Inside stub arena (center ~200,150); clear of interior wall blocks.
+    -- Map spawn positions are clear of the fountain collider.
     local enemies = {
         enemy:new(120, 100, { type = "chaser" }),
         enemy:new(280, 100, { type = "chaser" }),
         enemy:new(120, 200, { type = "fleer" }),
         enemy:new(315, 120, { type = "keeper" }),
-        -- Purple ranger starts behind the lower block so its LOS strafe is visible.
+        -- Purple ranger starts across the fountain so its LOS strafe is visible.
         enemy:new(280, 200, { type = "ranger" }),
     }
     cam = camera(playerActor.pos.x, playerActor.pos.y, zoom)
@@ -435,8 +469,9 @@ function love.draw()
     love.graphics.setBackgroundColor(0.5, 0.5, 0.5)
 
     cam:attach()
-    physics.drawWalls()
-    state:drawActors()
+    -- Perspective order: behind the fountain from above, in front from below.
+    -- Body, sword, and trails move across the scenery layer as one stack.
+    game_map.drawWithActors(state.gameMap, state.drawActors, state)
     physics.drawDebug()
     cam:detach()
 

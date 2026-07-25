@@ -39,8 +39,21 @@ function selftest.run(playerActor, enemyActors)
     allOk = check("collision classes registered", classOk, table.concat(classes, ", ")) and allOk
 
     local wallCount = physics.getWallCount()
-    allOk = check("test walls spawned (3-6+)", wallCount >= 3 and wallCount <= 12,
+    allOk = check("map colliders spawned (1+)", wallCount >= 1,
         tostring(wallCount)) and allOk
+
+    local ovalWall = nil
+    for _, wall in ipairs(physics.walls) do
+        if wall.mapObject and wall.mapObject.shape == "ellipse" then
+            ovalWall = wall
+            break
+        end
+    end
+    allOk = check("map ellipse uses polygon Wall collider",
+        ovalWall
+            and ovalWall.type == "Polygon"
+            and ovalWall.collision_class == "Wall"
+            and ovalWall.body:getType() == "static") and allOk
 
     if playerActor and playerActor.collider then
         local cx, cy = playerActor.collider:getX(), playerActor.collider:getY()
@@ -267,8 +280,8 @@ function selftest.run(playerActor, enemyActors)
                 r.safeDistance or -1, r.meleeRange or -1,
                 r.meleeReleaseRange or -1)) and allOk
 
-        local clearLOS = physics.hasLineOfSight(120, 150, 180, 150)
-        local blockedLOS = physics.hasLineOfSight(200, 60, 200, 150)
+        local clearLOS = physics.hasLineOfSight(190, 140, 290, 140)
+        local blockedLOS = physics.hasLineOfSight(190, 200, 290, 200)
         allOk = check("wall-aware line of sight",
             clearLOS and not blockedLOS,
             string.format("clear=%s blocked=%s",
@@ -343,12 +356,19 @@ function selftest.run(playerActor, enemyActors)
         r:stop()
         r:syncFromCollider()
 
-        -- Put the ranger above the vertical test block: it is too close and
-        -- occluded, so its chosen velocity must restore LOS without closing in.
-        r.collider:setPosition(200, 60)
+        -- Put the ranger across the fountain oval: it is occluded, so its
+        -- chosen velocity must restore LOS without closing in.
+        local blockedRangerX, blockedRangerY = 280, 200
+        r.collider:setPosition(blockedRangerX, blockedRangerY)
+        r:refreshPushAnchor()
+        r._backingAway = false
+        r._losGoalX, r._losGoalY = nil, nil
+        r._repositioningForLOS = false
         r:update(1 / 60, playerActor)
         local vx, vy = r.collider:getLinearVelocity()
-        local towardX, towardY = 0, 90
+        local towardX, towardY =
+            px - blockedRangerX,
+            py - blockedRangerY
         local closingSpeed = vx * towardX + vy * towardY
         local moving = math.sqrt(vx * vx + vy * vy)
         allOk = check("ranger retreats while restoring LOS",

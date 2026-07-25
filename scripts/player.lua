@@ -572,6 +572,11 @@ function player:getSpeed()
     return math.sqrt(vx * vx + vy * vy)
 end
 
+--- Bottom of the sprite is the player's ground contact for scenery sorting.
+function player:getGroundDepth()
+    return self.pos.y + self.spriteH / 2
+end
+
 function player:draw()
     if self.enemyHitFlash > 0 then
         love.graphics.setColor(1, 0.45, 0.45, 1)
