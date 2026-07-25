@@ -11,7 +11,7 @@ Top-down hack-and-slash jam game. **Countdown timer is health** (damage later dr
 - Slash trail (`scripts/slash_trail.lua`): procedural fading ribbon generated from the sword's hilt/tip pose and split across behind/front player layers
 - Enemies: soft barriers + `EnemyHit` sensor hurtboxes; resistance increases near their body and contact permits only a tiny, momentum-free nudge
 - Enemies can **move** via shared locomotion (`moveToward` / `moveAway` / `stop`); after intentional AI motion each frame, `pushAnchorX/Y` is refreshed to the collider so soft contact still works and AI is not yanked back to spawn
-- Four enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper**, **ranger** — polished locomotion (separation, hysteresis, safe spawns; art / attacks later)
+- Four enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper**, **ranger** — polished locomotion plus the ranger's cornered melee response (countdown damage later)
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
 - STI / full animations / damage / countdown UI: not wired yet
 
@@ -88,9 +88,9 @@ enemy:new(x, y, {
 | `chaser` | Chase when `distance <= aggroRange`; spread out while holding inside `stopDistance` (+ deadzone hysteresis); idle outside aggro | speed 75, aggroRange 140, stopDistance 28, stopDeadzone 6, separationDistance 28, separationSpeed 24 |
 | `fleer` | Run away when `distance <= fleeRange` (+ fleeDeadzone hysteresis); idle farther out; never chases | speed 95, fleeRange 90, fleeDeadzone 10 |
 | `keeper` | Hold ring at `preferredDistance ± band` while in `aggroRange`; idle outside aggro | speed 70, aggroRange 160, preferredDistance 70, band 18 |
-| `ranger` | Never closes distance; chooses a clear position outside its safe range and circles walls until it reaches that LOS position | speed 65, aggroRange 190, safeDistance 95, safeDeadzone 12, losDistanceBuffer 10 |
+| `ranger` | Holds a safe LOS position, but when cornered it stops, faces the player, and makes cooldown-limited melee hits | speed 65, aggroRange 190, safeDistance 95, meleeRange 32, meleeReleaseRange 39, meleeCooldown 0.8 |
 
-Placeholder draw colors differ per type; the ranger is purple. F1/DEBUG shows a tiny **C** / **F** / **K** / **R** above each enemy. Art assets and enemy attacks still later.
+Placeholder draw colors differ per type; the ranger is purple and flashes gold when hitting. F1/DEBUG shows a tiny **C** / **F** / **K** / **R** above each enemy. Art assets and other enemy attacks still later.
 
 **Soft-anchor rule:** when an enemy intentionally moves, every frame after setting motion set `collider.pushAnchorX/Y` to the current collider position (via `enemy:refreshPushAnchor`).
 
@@ -100,7 +100,7 @@ Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:
 - **Speeds / ranges:** raise `speed` for snappier pressure; widen `aggroRange` / `fleeRange` so types engage sooner; grow `stopDistance` / `band` / `*Deadzone` if you see vibrate at equilibrium.
 - **Pack spacing:** `physics.enemyMinSep` (~28) — light lateral avoidance while moving so blobs don't stack. Chasers also shuffle apart at low speed while holding near the player; enemies outside their active behavior still hard-zero velocity (no drift).
 - **Spawns:** `physics.pickSpawnPoint` places enemies inside arena bounds away from walls/player.
-- **Known non-goals:** no full navigation/pathfinding around interior blocks (the ranger only strafes to restore LOS); no enemy attacks/damage/art yet.
+- **Known non-goals:** no full navigation/pathfinding around interior blocks (the ranger only strafes to restore LOS); ranger hits currently provide feedback but countdown damage and attacks for other types are not wired yet.
 
 ### World update
 - Call **`world:update(dt)` every frame during gameplay** (via `physics.update`). Skipping this breaks collision and movement.
@@ -111,7 +111,7 @@ Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:
 
 ### Later (do not build full systems now)
 - Wire **damage → countdown timer** (player health is time; drain on hit — no UI yet).
-- Enemy **Attack sensors**: fill in `enemy:tryAttack(dt, player)` (types currently no-op). Hook already called each update; player sword already calls `enemy:onHitByPlayer()` (flash only, no HP).
+- Enemy **Attack sensors / damage**: ranger close-range hits now call `player:onHitByEnemy()`; wire that callback to countdown damage later. Other enemy attacks remain unwired.
 - Classes/`newSensor` helpers exist; plague-meter UI and real damage numbers still out of scope.
 
 ---

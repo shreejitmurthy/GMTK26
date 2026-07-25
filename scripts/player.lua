@@ -20,6 +20,7 @@ local SWING_END_WEIGHT = 0.2
 local SWORD_HILT_GAP = 12
 local SWORD_HORIZONTAL_REST_TILT = math.rad(15)
 local SWORD_VERTICAL_REST_TILT = math.rad(35)
+local ENEMY_HIT_FLASH_DURATION = 0.18
 
 --- Pure helper for tests / movement: normalize direction, THEN apply speed.
 function player.normalizedVelocity(dx, dy, speed)
@@ -120,6 +121,8 @@ function player:new(x, y)
     p.swingSerial = 0
     p.hasSwung = false
     p.swingHitEnemies = {}
+    p.enemyHitCount = 0
+    p.enemyHitFlash = 0
     p.attackPose = {
         angle = 0,
         orbitAngle = 0,
@@ -150,6 +153,18 @@ function player:new(x, y)
     p.y = p.pos.y
 
     return p
+end
+
+--- Enemy hit callback. The countdown-health system is not wired yet, so this
+--- records the hit and gives immediate visual/console feedback.
+function player:onHitByEnemy(source)
+    self.enemyHitCount = self.enemyHitCount + 1
+    self.enemyHitFlash = ENEMY_HIT_FLASH_DURATION
+    print(string.format(
+        "[hit] %s hit player (#%d)",
+        (source and source.enemyType) or "enemy",
+        self.enemyHitCount
+    ))
 end
 
 --- Sword pose from swing progress (0..1). Angle+offset relative to facing at swing start.
@@ -315,6 +330,9 @@ end
 
 --- Step 1 of frame order: read input → normalize → setLinearVelocity; advance swing.
 function player:update(dt)
+    if self.enemyHitFlash > 0 then
+        self.enemyHitFlash = math.max(0, self.enemyHitFlash - dt)
+    end
     local input = { x = 0, y = 0 }
 
     -- controls.* are key lists (ref2-style); unpack so both WASD and arrows register.
@@ -370,7 +388,11 @@ function player:getSpeed()
 end
 
 function player:draw()
-    love.graphics.setColor(1, 1, 1, 1)
+    if self.enemyHitFlash > 0 then
+        love.graphics.setColor(1, 0.45, 0.45, 1)
+    else
+        love.graphics.setColor(1, 1, 1, 1)
+    end
     love.graphics.draw(
         self.img,
         self.pos.x,
@@ -381,5 +403,5 @@ function player:draw()
         self.img:getWidth() / 2,
         self.img:getHeight() / 2
     )
-
+    love.graphics.setColor(1, 1, 1, 1)
 end

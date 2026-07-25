@@ -124,6 +124,7 @@ function selftest.run(playerActor, enemyActors)
                 and type(sample.moveInDirection) == "function"
                 and type(sample.moveWithoutApproaching) == "function"
                 and type(sample.hasLineOfSight) == "function"
+                and type(sample.faceToward) == "function"
                 and type(sample.stop) == "function"
                 and type(sample.holdApartFrom) == "function"
                 and type(sample.refreshPushAnchor) == "function") and allOk
@@ -201,15 +202,18 @@ function selftest.run(playerActor, enemyActors)
             nearlyEqual(r.speed, 65) and nearlyEqual(r.aggroRange, 190)
                 and nearlyEqual(r.safeDistance, 95)
                 and nearlyEqual(r.safeDeadzone, 12)
+                and nearlyEqual(r.meleeRange, 32)
+                and nearlyEqual(r.meleeReleaseRange, 39)
+                and nearlyEqual(r.meleeCooldown, 0.8)
                 and nearlyEqual(r.losDistanceBuffer, 10)
                 and nearlyEqual(r.losGoalTolerance, 7)
                 and nearlyEqual(r.losProbeDistance, 32)
                 and nearlyEqual(r.losRetreatWeight, 0.65)
                 and r.debugLetter == "R",
-            string.format("speed=%.0f aggro=%.0f safe=%.0f dead=%.0f buffer=%.0f",
+            string.format("speed=%.0f aggro=%.0f safe=%.0f melee=%.0f/%.0f",
                 r.speed or -1, r.aggroRange or -1,
-                r.safeDistance or -1, r.safeDeadzone or -1,
-                r.losDistanceBuffer or -1)) and allOk
+                r.safeDistance or -1, r.meleeRange or -1,
+                r.meleeReleaseRange or -1)) and allOk
 
         local clearLOS = physics.hasLineOfSight(120, 150, 180, 150)
         local blockedLOS = physics.hasLineOfSight(200, 60, 200, 150)
@@ -218,9 +222,56 @@ function selftest.run(playerActor, enemyActors)
             string.format("clear=%s blocked=%s",
                 tostring(clearLOS), tostring(blockedLOS))) and allOk
 
+        local rx, ry = r.collider:getX(), r.collider:getY()
+        local px, py = playerActor.collider:getX(), playerActor.collider:getY()
+        local startingHitCount = playerActor.enemyHitCount
+        local startingAttackSerial = r.attackSerial
+        r.collider:setPosition(px + r.meleeRange - 2, py)
+        r:refreshPushAnchor()
+        r._meleeEngaged = false
+        r.wantsMeleeAttack = false
+        r.attackCooldownTimer = 0
+        r:update(1 / 60, playerActor)
+        local meleeVX, meleeVY = r.collider:getLinearVelocity()
+        local meleeSpeed = math.sqrt(
+            meleeVX * meleeVX + meleeVY * meleeVY
+        )
+        allOk = check("cornered ranger stops, faces, and hits",
+            r._meleeEngaged
+                and r.wantsMeleeAttack
+                and meleeSpeed < 0.01
+                and r.facing.x < -0.99
+                and math.abs(r.facing.y) < 0.01
+                and r.attackSerial == startingAttackSerial + 1
+                and playerActor.enemyHitCount == startingHitCount + 1,
+            string.format(
+                "engaged=%s speed=%.2f facing=%.2f,%.2f attacks=%d hits=%d",
+                tostring(r._meleeEngaged), meleeSpeed,
+                r.facing.x, r.facing.y,
+                r.attackSerial - startingAttackSerial,
+                playerActor.enemyHitCount - startingHitCount
+            )) and allOk
+
+        r:update(1 / 60, playerActor)
+        allOk = check("ranger melee obeys cooldown",
+            r.attackSerial == startingAttackSerial + 1,
+            string.format("cooldown=%.2f attacks=%d",
+                r.attackCooldownTimer,
+                r.attackSerial - startingAttackSerial)) and allOk
+
+        r.collider:setPosition(rx, ry)
+        r:refreshPushAnchor()
+        r._meleeEngaged = false
+        r.wantsMeleeAttack = false
+        r.attackCooldownTimer = 0
+        r.attackFlash = 0
+        playerActor.enemyHitCount = startingHitCount
+        playerActor.enemyHitFlash = 0
+        r:stop()
+        r:syncFromCollider()
+
         -- Put the ranger above the vertical test block: it is too close and
         -- occluded, so its chosen velocity must restore LOS without closing in.
-        local rx, ry = r.collider:getX(), r.collider:getY()
         r.collider:setPosition(200, 60)
         r:update(1 / 60, playerActor)
         local vx, vy = r.collider:getLinearVelocity()
@@ -239,10 +290,11 @@ function selftest.run(playerActor, enemyActors)
         r._backingAway = false
         r._losGoalX, r._losGoalY = nil, nil
         r._repositioningForLOS = false
+        r._meleeEngaged = false
+        r.wantsMeleeAttack = false
         r.hasPlayerLOS = nil
         r:stop()
         r:syncFromCollider()
-        local px, py = playerActor.collider:getX(), playerActor.collider:getY()
         local startDX, startDY = rx - px, ry - py
         local startDistance = math.sqrt(startDX * startDX + startDY * startDY)
         local minDistance = startDistance
@@ -307,6 +359,10 @@ function selftest.run(playerActor, enemyActors)
         r._backingAway = false
         r._losGoalX, r._losGoalY = nil, nil
         r._repositioningForLOS = false
+        r._meleeEngaged = false
+        r.wantsMeleeAttack = false
+        r.attackCooldownTimer = 0
+        r.attackFlash = 0
         r.hasPlayerLOS = nil
         r:stop()
         r:syncFromCollider()

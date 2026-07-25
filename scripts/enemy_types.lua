@@ -35,6 +35,9 @@ enemy_types.defaults = {
         aggroRange = 190,
         safeDistance = 95,
         safeDeadzone = 12,
+        meleeRange = 32,
+        meleeReleaseRange = 39,
+        meleeCooldown = 0.8,
         losDistanceBuffer = 10,
         losGoalTolerance = 7,
         losProbeDistance = 32,
@@ -60,6 +63,9 @@ local AI_FIELDS = {
         "aggroRange",
         "safeDistance",
         "safeDeadzone",
+        "meleeRange",
+        "meleeReleaseRange",
+        "meleeCooldown",
         "losDistanceBuffer",
         "losGoalTolerance",
         "losProbeDistance",
@@ -103,6 +109,8 @@ function enemy_types.apply(e, options)
     e._losGoalX = nil
     e._losGoalY = nil
     e._repositioningForLOS = false
+    e._meleeEngaged = false
+    e.wantsMeleeAttack = false
     e.hasPlayerLOS = nil
 end
 
@@ -191,10 +199,33 @@ local function updateRanger(e, dt, player)
         e._backingAway = false
         e._losGoalX, e._losGoalY = nil, nil
         e._repositioningForLOS = false
+        e._meleeEngaged = false
+        e.wantsMeleeAttack = false
         e.hasPlayerLOS = nil
         e:stop(dt)
         return
     end
+
+    local playerLOS = e:hasLineOfSight(px, py)
+    if e._meleeEngaged then
+        if dist > e.meleeReleaseRange or not playerLOS then
+            e._meleeEngaged = false
+        end
+    elseif dist <= e.meleeRange and playerLOS then
+        e._meleeEngaged = true
+    end
+
+    if e._meleeEngaged then
+        e._backingAway = false
+        e._losGoalX, e._losGoalY = nil, nil
+        e._repositioningForLOS = false
+        e.wantsMeleeAttack = true
+        e.hasPlayerLOS = true
+        e:stop(dt)
+        e:faceToward(px, py)
+        return
+    end
+    e.wantsMeleeAttack = false
 
     if e._backingAway then
         if dist >= e.safeDistance + e.safeDeadzone then
@@ -204,7 +235,7 @@ local function updateRanger(e, dt, player)
         e._backingAway = true
     end
 
-    e.hasPlayerLOS = e:hasLineOfSight(px, py)
+    e.hasPlayerLOS = playerLOS
     if not e.hasPlayerLOS then
         e._repositioningForLOS = true
     end

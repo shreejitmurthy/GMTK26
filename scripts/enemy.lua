@@ -11,6 +11,7 @@ setmetatable(enemy, { __index = actor })
 local DEFAULT_HIT_W = 14
 local DEFAULT_HIT_H = 14
 local HURT_FLASH_DURATION = 0.15
+local ATTACK_FLASH_DURATION = 0.12
 
 --- Normalize direction, THEN apply speed (same pattern as player.normalizedVelocity).
 local function normalizedVelocity(dx, dy, speed)
@@ -34,6 +35,9 @@ function enemy:new(x, y, options)
     enemy_types.apply(e, options)
     e.facing = { x = 1, y = 0 }
     e.hurtFlash = 0
+    e.attackFlash = 0
+    e.attackCooldownTimer = 0
+    e.attackSerial = 0
 
     if love.filesystem.getInfo("res/images/enemy.png") then
         e.img = love.graphics.newImage("res/images/enemy.png")
@@ -96,6 +100,15 @@ function enemy:updateFacingFromVelocity(vx, vy)
     if speed > 1 then
         self.facing.x = vx / speed
         self.facing.y = vy / speed
+    end
+end
+
+function enemy:faceToward(tx, ty)
+    local dx, dy = self:vecToward(tx, ty)
+    local distance = math.sqrt(dx * dx + dy * dy)
+    if distance > 0 then
+        self.facing.x = dx / distance
+        self.facing.y = dy / distance
     end
 end
 
@@ -209,13 +222,47 @@ function enemy:onHitByPlayer()
     self.hurtFlash = HURT_FLASH_DURATION
 end
 
---- Shree: enemy attack sensors later.
+--- Close-range attack hook. Countdown damage can be added in player:onHitByEnemy
+--- later; for now the callback supplies visible feedback and a testable hit event.
 function enemy:tryAttack(dt, player)
+    self.attackCooldownTimer = math.max(
+        0,
+        (self.attackCooldownTimer or 0) - dt
+    )
+    if not self.wantsMeleeAttack
+        or not player
+        or not player.collider
+        or self.attackCooldownTimer > 0
+    then
+        return
+    end
+
+    local px, py = player.collider:getX(), player.collider:getY()
+    local dx, dy = self:vecToward(px, py)
+    local distance = math.sqrt(dx * dx + dy * dy)
+    if distance > (self.meleeRange or 0) or not self:hasLineOfSight(px, py) then
+        return
+    end
+
+    self.attackCooldownTimer = self.meleeCooldown or 0.8
+    self.attackFlash = ATTACK_FLASH_DURATION
+    self.attackSerial = self.attackSerial + 1
+    if player.onHitByEnemy then
+        player:onHitByEnemy(self)
+    else
+        print(string.format(
+            "[hit] %s hit player",
+            self.enemyType or "enemy"
+        ))
+    end
 end
 
 function enemy:update(dt, player)
     if self.hurtFlash and self.hurtFlash > 0 then
         self.hurtFlash = math.max(0, self.hurtFlash - dt)
+    end
+    if self.attackFlash and self.attackFlash > 0 then
+        self.attackFlash = math.max(0, self.attackFlash - dt)
     end
     enemy_types.update(self, dt, player)
     self:tryAttack(dt, player)
@@ -238,10 +285,13 @@ end
 
 function enemy:draw()
     local flashing = self.hurtFlash and self.hurtFlash > 0
+    local attacking = self.attackFlash and self.attackFlash > 0
     if self.img then
         local flipX = (self.facing and self.facing.x < 0) and -1 or 1
         if flashing then
             love.graphics.setColor(1, 0.45, 0.45, 1)
+        elseif attacking then
+            love.graphics.setColor(1, 0.85, 0.3, 1)
         else
             love.graphics.setColor(1, 1, 1, 1)
         end
@@ -260,6 +310,8 @@ function enemy:draw()
         local c = self.color or { 0.25, 0.45, 0.7 }
         if flashing then
             c = { 1, 0.45, 0.45 }
+        elseif attacking then
+            c = { 1, 0.85, 0.3 }
         end
         local flipX = (self.facing and self.facing.x < 0) and -1 or 1
         love.graphics.push()
@@ -267,10 +319,16 @@ function enemy:draw()
         love.graphics.scale(flipX, 1)
         love.graphics.setColor(c[1], c[2], c[3], 1)
         love.graphics.rectangle("fill", -self.hitW / 2, -self.hitH / 2, self.hitW, self.hitH)
-        -- Tiny facing cue on the "front" edge of the placeholder.
-        love.graphics.setColor(1, 1, 1, 0.55)
-        love.graphics.rectangle("fill", self.hitW / 2 - 3, -2, 3, 4)
         love.graphics.pop()
+        -- Directional cue makes vertical as well as horizontal facing readable.
+        local facing = self.facing or { x = 1, y = 0 }
+        love.graphics.setColor(1, 1, 1, 0.7)
+        love.graphics.circle(
+            "fill",
+            self.pos.x + facing.x * (self.hitW / 2 - 1.5),
+            self.pos.y + facing.y * (self.hitH / 2 - 1.5),
+            1.5
+        )
         love.graphics.setColor(1, 1, 1, 1)
     end
 
