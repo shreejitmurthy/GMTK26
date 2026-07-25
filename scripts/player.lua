@@ -185,15 +185,21 @@ function player:pollAttackHits()
         end
         if enemyObj then
             self.swingHitEnemies[enemyObj] = true
+            if enemyObj.onHitByPlayer then
+                enemyObj:onHitByPlayer()
+            else
+                local label = enemyObj.label or "?"
+                local ex, ey = 0, 0
+                if enemyObj.pos then
+                    ex, ey = enemyObj.pos.x, enemyObj.pos.y
+                elseif other then
+                    ex, ey = other:getX(), other:getY()
+                end
+                print(string.format("[hit] PlayerAttack entered EnemyHit (%s @ %.1f, %.1f)", label, ex, ey))
+            end
+        else
+            print("[hit] PlayerAttack entered EnemyHit (?)")
         end
-        local label = (enemyObj and enemyObj.label) or "?"
-        local ex, ey = 0, 0
-        if enemyObj and enemyObj.pos then
-            ex, ey = enemyObj.pos.x, enemyObj.pos.y
-        elseif other then
-            ex, ey = other:getX(), other:getY()
-        end
-        print(string.format("[hit] PlayerAttack entered EnemyHit (%s @ %.1f, %.1f)", label, ex, ey))
     end
 end
 

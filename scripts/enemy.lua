@@ -10,6 +10,7 @@ setmetatable(enemy, { __index = actor })
 
 local DEFAULT_HIT_W = 14
 local DEFAULT_HIT_H = 14
+local HURT_FLASH_DURATION = 0.15
 
 --- Normalize direction, THEN apply speed (same pattern as player.normalizedVelocity).
 local function normalizedVelocity(dx, dy, speed)
@@ -32,6 +33,7 @@ function enemy:new(x, y, options)
 
     enemy_types.apply(e, options)
     e.facing = { x = 1, y = 0 }
+    e.hurtFlash = 0
 
     if love.filesystem.getInfo("res/images/enemy.png") then
         e.img = love.graphics.newImage("res/images/enemy.png")
@@ -126,8 +128,29 @@ function enemy:stop(dt)
     self:syncHurtbox()
 end
 
+--- Hook for player sword hits. No HP/damage yet — flash only.
+function enemy:onHitByPlayer()
+    local ex, ey = self.pos.x, self.pos.y
+    print(string.format(
+        "[hit] PlayerAttack hit %s (%s @ %.1f, %.1f)",
+        self.enemyType or "enemy",
+        self.label or "enemy",
+        ex,
+        ey
+    ))
+    self.hurtFlash = HURT_FLASH_DURATION
+end
+
+--- Shree: enemy attack sensors later.
+function enemy:tryAttack(dt, player)
+end
+
 function enemy:update(dt, player)
+    if self.hurtFlash and self.hurtFlash > 0 then
+        self.hurtFlash = math.max(0, self.hurtFlash - dt)
+    end
     enemy_types.update(self, dt, player)
+    self:tryAttack(dt, player)
 end
 
 function enemy:syncHurtbox()
@@ -146,9 +169,14 @@ function enemy:syncFromCollider()
 end
 
 function enemy:draw()
+    local flashing = self.hurtFlash and self.hurtFlash > 0
     if self.img then
         local flipX = (self.facing and self.facing.x < 0) and -1 or 1
-        love.graphics.setColor(1, 1, 1, 1)
+        if flashing then
+            love.graphics.setColor(1, 0.45, 0.45, 1)
+        else
+            love.graphics.setColor(1, 1, 1, 1)
+        end
         love.graphics.draw(
             self.img,
             self.pos.x,
@@ -159,8 +187,12 @@ function enemy:draw()
             self.img:getWidth() / 2,
             self.img:getHeight() / 2
         )
+        love.graphics.setColor(1, 1, 1, 1)
     else
         local c = self.color or { 0.25, 0.45, 0.7 }
+        if flashing then
+            c = { 1, 0.45, 0.45 }
+        end
         local flipX = (self.facing and self.facing.x < 0) and -1 or 1
         love.graphics.push()
         love.graphics.translate(self.pos.x, self.pos.y)

@@ -106,8 +106,10 @@ Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:
 - Stub arena walls via `physics.spawnTestArena` until STI lands.
 - STI object-layer → static `Wall` colliders should call `physics.addWallsFromObjects(objects)` (drop-in).
 
-### Later hook (do not build full systems now)
-- Damaging contact can later drain the countdown-health timer. Physics this pass: classes + sensor helper ready; no plague-meter UI.
+### Later (do not build full systems now)
+- Wire **damage → countdown timer** (player health is time; drain on hit — no UI yet).
+- Enemy **Attack sensors**: fill in `enemy:tryAttack(dt, player)` (types currently no-op). Hook already called each update; player sword already calls `enemy:onHitByPlayer()` (flash only, no HP).
+- Classes/`newSensor` helpers exist; plague-meter UI and real damage numbers still out of scope.
 
 ---
 
