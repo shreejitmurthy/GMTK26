@@ -10,10 +10,16 @@ setmetatable(player, { __index = actor })
 -- PlayerAttack sensor size (AABB approx of sword volume; rotated with swing).
 local ATTACK_W = 22
 local ATTACK_H = 8
-local SWING_DURATION = 0.2
-local SWING_ARC = math.rad(120)
-local SWING_START = -math.rad(60)
+local SWING_DURATION = 0.35
+local SWING_STRETCH = math.rad(10)
+local SWING_ARC = math.pi + SWING_STRETCH * 2
+local SWING_START = -math.pi / 2 - SWING_STRETCH
 local SWORD_LENGTH = 22
+local SWING_WINDUP_CONTROL = 0.1
+local SWING_END_WEIGHT = 0.2
+local SWORD_HILT_GAP = 12
+local SWORD_HORIZONTAL_REST_TILT = math.rad(15)
+local SWORD_VERTICAL_REST_TILT = math.rad(35)
 
 --- Pure helper for tests / movement: normalize direction, THEN apply speed.
 function player.normalizedVelocity(dx, dy, speed)
@@ -23,6 +29,61 @@ function player.normalizedVelocity(dx, dy, speed)
         dy = dy / length
     end
     return dx * speed, dy * speed
+end
+
+--- Unit direction from a world-space origin to a target, with a stable fallback.
+function player.directionToTarget(px, py, targetX, targetY, fallbackX, fallbackY)
+    local dx, dy = targetX - px, targetY - py
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length > 0 then
+        return dx / length, dy / length
+    end
+
+    fallbackX, fallbackY = fallbackX or 1, fallbackY or 0
+    local fallbackLength = math.sqrt(fallbackX * fallbackX + fallbackY * fallbackY)
+    if fallbackLength > 0 then
+        return fallbackX / fallbackLength, fallbackY / fallbackLength
+    end
+    return 1, 0
+end
+
+--- Weighted cut with a quintic endpoint correction for a gentle full stop.
+function player.weightedSwingEase(t)
+    t = math.max(0, math.min(1, t))
+    local remaining = 1 - t
+    local weightedSwing = 3 * remaining * remaining * t * SWING_WINDUP_CONTROL
+        + 3 * remaining * t * t
+        + t * t * t
+    local cubicEaseOut = 1 - remaining * remaining * remaining
+    local easedSwing =
+        weightedSwing + (cubicEaseOut - weightedSwing) * SWING_END_WEIGHT
+
+    -- The cubic already reaches zero velocity at t=1, but still has non-zero
+    -- acceleration there. This correction keeps its opening motion unchanged
+    -- while bringing both velocity and acceleration smoothly to zero.
+    local stopCorrection =
+        3 * (1 - SWING_END_WEIGHT) * (1 - SWING_WINDUP_CONTROL)
+    return easedSwing
+        + stopCorrection * t * t * t * remaining * remaining
+end
+
+--- Radial sword angle for an already-eased swing value.
+function player.swingAngle(baseAngle, easedProgress)
+    easedProgress = math.max(0, math.min(1, easedProgress))
+    return baseAngle + SWING_START + SWING_ARC * easedProgress
+end
+
+--- One continuous turnover keeps the blade on the outside of the hand arc.
+function player.wristAngle(baseAngle, arcProgress)
+    arcProgress = math.max(0, math.min(1, arcProgress))
+    -- Vertical swings finish farther off their straight-behind axis so the
+    -- sword rests on a readable diagonal instead of nearly vertical.
+    local verticalWeight = math.sin(baseAngle) ^ 2
+    local restTilt = SWORD_HORIZONTAL_REST_TILT
+        + (SWORD_VERTICAL_REST_TILT - SWORD_HORIZONTAL_REST_TILT) * verticalWeight
+    local wristStartAngle = -math.pi + restTilt
+    local wristTurn = math.pi * 2 - restTilt * 2
+    return baseAngle + wristStartAngle + wristTurn * arcProgress
 end
 
 function player:new(x, y)
@@ -40,7 +101,11 @@ function player:new(x, y)
         up    = { "w", "up" },
         down  = { "s", "down" },
     }
-    p.facing = { x = 1, y = 0 }
+    -- Cardinal components use -1/1: left/right on x, up/down on y.
+    -- Keep facing as an alias while attack code migrates to the direction vector.
+    p.direction = { x = 1, y = 0 }
+    p.facing = p.direction
+    p.aimDirection = { x = 1, y = 0 }
     p.attackHitbox = nil
     p.attackW = ATTACK_W
     p.attackH = ATTACK_H
@@ -50,9 +115,16 @@ function player:new(x, y)
     p.swingT = 0
     p.swingDuration = SWING_DURATION
     p.swingBaseAngle = 0
+    p.swingDirection = 1
+    p.nextSwingDirection = 1
+    p.swingSerial = 0
+    p.hasSwung = false
     p.swingHitEnemies = {}
-    p.sword = {
+    p.attackPose = {
         angle = 0,
+        orbitAngle = 0,
+        easedProgress = 0,
+        progress = 0,
         x = 0,
         y = 0,
         baseX = 0,
@@ -82,26 +154,43 @@ end
 
 --- Sword pose from swing progress (0..1). Angle+offset relative to facing at swing start.
 function player:updateSwordPose(progress)
-    local localAngle = SWING_START + SWING_ARC * progress
-    local angle = self.swingBaseAngle + localAngle
-    local reach = (self.hitW / 2) + 4
-    local px, py = self.collider:getX(), self.collider:getY()
-    local mid = reach + self.sword.length / 2
+    local arcProgress = progress
+    if self.swingDirection < 0 then
+        arcProgress = 1 - progress
+    end
 
-    self.sword.angle = angle
-    self.sword.x = px + math.cos(angle) * mid
-    self.sword.y = py + math.sin(angle) * mid
-    self.sword.baseX = px + math.cos(angle) * reach
-    self.sword.baseY = py + math.sin(angle) * reach
-    self.sword.tipX = px + math.cos(angle) * (reach + self.sword.length)
-    self.sword.tipY = py + math.sin(angle) * (reach + self.sword.length)
+    local orbitAngle = player.swingAngle(self.swingBaseAngle, arcProgress)
+    local bladeAngle = player.wristAngle(self.swingBaseAngle, arcProgress)
+    local bodyRadius = math.max(self.hitW, self.hitH) / 2
+    local reach = bodyRadius + SWORD_HILT_GAP
+    local px, py = self.collider:getX(), self.collider:getY()
+
+    self.attackPose.angle = bladeAngle
+    self.attackPose.orbitAngle = orbitAngle
+    self.attackPose.easedProgress = progress
+    self.attackPose.progress = arcProgress
+    self.attackPose.baseX = px + math.cos(orbitAngle) * reach
+    self.attackPose.baseY = py + math.sin(orbitAngle) * reach
+    self.attackPose.x =
+        self.attackPose.baseX + math.cos(bladeAngle) * self.attackPose.length / 2
+    self.attackPose.y =
+        self.attackPose.baseY + math.sin(bladeAngle) * self.attackPose.length / 2
+    self.attackPose.tipX =
+        self.attackPose.baseX + math.cos(bladeAngle) * self.attackPose.length
+    self.attackPose.tipY =
+        self.attackPose.baseY + math.sin(bladeAngle) * self.attackPose.length
+end
+
+--- Screen-space Y ordering: a hilt above the player draws behind it.
+function player:isSwordBehind()
+    return self.attackPose.baseY < self.pos.y
 end
 
 function player:enableAttackHitbox()
     if self.attackHitbox then
         return
     end
-    local cx, cy = self.sword.x, self.sword.y
+    local cx, cy = self.attackPose.x, self.attackPose.y
     self.attackHitbox = physics.newSensor(
         cx - self.attackW / 2,
         cy - self.attackH / 2,
@@ -111,7 +200,7 @@ function player:enableAttackHitbox()
     )
     self.attackHitbox:setObject(self)
     self.attackHitbox:setType("kinematic")
-    self.attackHitbox:setAngle(self.sword.angle)
+    self.attackHitbox:setAngle(self.attackPose.angle)
 end
 
 function player:disableAttackHitbox()
@@ -127,24 +216,44 @@ function player:syncAttackHitbox()
     if not self.attackHitbox then
         return
     end
-    self.attackHitbox:setPosition(self.sword.x, self.sword.y)
-    self.attackHitbox:setAngle(self.sword.angle)
+    self.attackHitbox:setPosition(self.attackPose.x, self.attackPose.y)
+    self.attackHitbox:setAngle(self.attackPose.angle)
 end
 
---- Press Space / click: start short-lived swing. Swing moves PlayerAttack; damage/timer later.
-function player:startSwing()
+--- Lock a swing toward a world-space mouse target.
+function player:startSwing(targetX, targetY)
     if self.swinging then
         return
     end
 
-    local fx, fy = self.facing.x, self.facing.y
-    local len = math.sqrt(fx * fx + fy * fy)
-    if len > 0 then
-        fx, fy = fx / len, fy / len
+    local px, py = self.collider:getX(), self.collider:getY()
+    local fx, fy
+    if targetX and targetY then
+        fx, fy = player.directionToTarget(
+            px,
+            py,
+            targetX,
+            targetY,
+            self.aimDirection.x,
+            self.aimDirection.y
+        )
     else
-        fx, fy = 1, 0
+        fx, fy = player.directionToTarget(
+            0,
+            0,
+            self.direction.x,
+            self.direction.y,
+            self.aimDirection.x,
+            self.aimDirection.y
+        )
     end
 
+    self.aimDirection.x = fx
+    self.aimDirection.y = fy
+    self.swingDirection = self.nextSwingDirection
+    self.nextSwingDirection = -self.nextSwingDirection
+    self.swingSerial = self.swingSerial + 1
+    self.hasSwung = true
     self.swinging = true
     self.swingT = 0
     self.swingBaseAngle = math.atan2(fy, fx)
@@ -161,11 +270,12 @@ function player:updateSwing(dt)
     end
 
     self.swingT = self.swingT + dt
-    local progress = math.min(1, self.swingT / self.swingDuration)
-    self:updateSwordPose(progress)
+    local timeProgress = math.min(1, self.swingT / self.swingDuration)
+    local arcProgress = player.weightedSwingEase(timeProgress)
+    self:updateSwordPose(arcProgress)
     self:syncAttackHitbox()
 
-    if progress >= 1 then
+    if timeProgress >= 1 then
         self.swinging = false
         self:disableAttackHitbox()
     end
@@ -221,8 +331,8 @@ function player:update(dt)
     end
 
     if input.x ~= 0 or input.y ~= 0 then
-        self.facing.x = input.x
-        self.facing.y = input.y
+        self.direction.x = input.x
+        self.direction.y = input.y
     end
 
     local vx, vy = player.normalizedVelocity(input.x, input.y, self.speed)
@@ -240,9 +350,13 @@ function player:syncFromCollider()
     self.y = self.pos.y
     -- Keep sword + PlayerAttack glued to body if we moved during the swing.
     if self.swinging then
-        local progress = math.min(1, self.swingT / self.swingDuration)
-        self:updateSwordPose(progress)
+        local timeProgress = math.min(1, self.swingT / self.swingDuration)
+        local arcProgress = player.weightedSwingEase(timeProgress)
+        self:updateSwordPose(arcProgress)
         self:syncAttackHitbox()
+    elseif self.hasSwung then
+        -- Preserve the completed angle while keeping the held sword attached.
+        self:updateSwordPose(self.attackPose.easedProgress)
     end
 end
 
@@ -268,12 +382,4 @@ function player:draw()
         self.img:getHeight() / 2
     )
 
-    -- Placeholder sword: line along swing (decoupled from body sprite).
-    if self.swinging then
-        love.graphics.setColor(0.92, 0.88, 0.55, 1)
-        love.graphics.setLineWidth(3)
-        love.graphics.line(self.sword.baseX, self.sword.baseY, self.sword.tipX, self.sword.tipY)
-        love.graphics.setLineWidth(1)
-        love.graphics.setColor(1, 1, 1, 1)
-    end
 end

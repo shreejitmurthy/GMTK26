@@ -7,6 +7,8 @@ Top-down hack-and-slash jam game. **Countdown timer is health** (damage later dr
 - Grey room + camera follow
 - Windfield world (`scripts/physics.lua`): **zero gravity**, collision classes, stub arena walls
 - Player (`scripts/player.lua`): WASD + arrows, **normalized** diagonal velocity, collider is position source of truth
+- Sword (`scripts/sword.lua`): separate actor using frame one of the 16×16 sword atlas; a continuous outward turnover finishes in mirrored 15° resting tilts without crossing the player
+- Slash trail (`scripts/slash_trail.lua`): procedural fading ribbon generated from the sword's hilt/tip pose and split across behind/front player layers
 - Enemies: soft barriers + `EnemyHit` sensor hurtboxes; resistance increases near their body and contact permits only a tiny, momentum-free nudge
 - Enemies can **move** via shared locomotion (`moveToward` / `moveAway` / `stop`); after intentional AI motion each frame, `pushAnchorX/Y` is refreshed to the collider so soft contact still works and AI is not yanked back to spawn
 - Three enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper** — polished locomotion (separation, hysteresis, safe spawns; art / attacks later)
@@ -136,12 +138,13 @@ Pass/fail against a playable build:
 1. Run the game: `love .` from the project root.
 2. On load, console should print `[physics_selftest] ALL PASS` (or press **F2** to re-run).
 3. Move with **WASD** and **arrow keys**. Confirm smooth top-down motion and **no gravity drift** when idle.
-4. Walk into stub arena walls / interior blocks: walls stop immediately. Soft contact still resists without launching. Soak spawn is **2 of each** type — orange pressures, green flees, blue holds a ring; packs should not fuse or vibrate at stop distances.
-5. Press **F1** (or **\`**): collider outlines + tiny **C/F/K** letters; HUD shows collider pos and **velocity magnitude `|v|`**.
-6. **Swing / hitbox test:** stand near an enemy, press **Space** or **left-click**. A short decoupled sword arc plays (placeholder line). F1 shows `PlayerAttack` sweeping with the sword; idle = no attack sensor. On overlap enter, console prints `[hit] PlayerAttack entered EnemyHit (...)` (once per enemy per swing).
-7. **Diagonal speed check:** hold **Right** only and note `|v|` in the debug HUD; then hold **Up+Right**. Magnitudes must match (within ~1%). If diagonal is ~1.41× faster, normalization is broken (FAIL).
-8. Release movement: `|v|` returns to ~0; camera still follows the player.
-9. Esc quits.
+4. Walk into stub arena walls / interior blocks: walls stop immediately. Approach an enemy: movement progressively resists and contact may nudge it up to 3px, but holding input must never shove it farther or launch either actor.
+5. Press **F1** (or **\`**): collider outlines appear for player + walls + **sensors** (`EnemyHit` always; `PlayerAttack` only during a swing, moving with the sword). HUD shows collider pos and **velocity magnitude `|v|`**.
+6. **Sword direction test:** aim and swing twice. The first swing should travel from the player's relative left (behind) to right (in front), remain held there, then reverse direction and layer order on the second swing.
+7. **Swing / hitbox test:** point the mouse toward an enemy, then press **Space** or **left-click**. The sword actor swings in that world-space direction. F1 shows `PlayerAttack` sweeping with the sword; idle = no attack sensor. On overlap enter, console prints `[hit] PlayerAttack entered EnemyHit (...)` (once per enemy per swing).
+8. **Diagonal speed check:** hold **Right** only and note `|v|` in the debug HUD; then hold **Up+Right**. Magnitudes must match (within ~1%). If diagonal is ~1.41× faster, normalization is broken (FAIL).
+9. Release movement: `|v|` returns to ~0; camera still follows the player.
+10. Esc quits.
 
 ---
 

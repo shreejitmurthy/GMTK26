@@ -7,6 +7,8 @@ camera = require "lib.camera"
 require "scripts.actor"
 local physics = require "scripts.physics"
 require "scripts.player"
+require "scripts.sword"
+require "scripts.slash_trail"
 require "scripts.enemy"
 local physics_selftest = require "scripts.physics_selftest"
 
@@ -85,8 +87,30 @@ function state:update(dt)
 end
 
 function state:drawActors()
-    for _, actor in ipairs(self.actors) do
-        actor:draw()
+    local drawList = {}
+    for index, sceneActor in ipairs(self.actors) do
+        local depth = index
+        if sceneActor.getDrawDepth then
+            depth = sceneActor:getDrawDepth()
+        elseif sceneActor.pos then
+            depth = sceneActor.pos.y
+        end
+        drawList[#drawList + 1] = {
+            actor = sceneActor,
+            depth = depth,
+            index = index,
+        }
+    end
+
+    table.sort(drawList, function(a, b)
+        if a.depth == b.depth then
+            return a.index < b.index
+        end
+        return a.depth < b.depth
+    end)
+
+    for _, item in ipairs(drawList) do
+        item.actor:draw()
     end
 end
 
@@ -162,31 +186,19 @@ function love.load()
     physics.spawnTestArena(spawnX, spawnY)
 
     local playerActor = player:new(spawnX, spawnY)
-
-    -- Soak test: 2 of each type at safe arena points (away from walls/player).
-    local placed = {}
-    local spawnOrder = {
-        "chaser", "fleer", "keeper",
-        "chaser", "fleer", "keeper",
+    local swordActor = sword:new(playerActor)
+    local trailBehind = slashTrail:new(playerActor, true)
+    local trailFront = slashTrail:new(playerActor, false)
+    -- Inside stub arena (center ~200,150); clear of interior wall blocks.
+    local enemies = {
+        enemy:new(120, 100),
+        enemy:new(280, 100),
+        enemy:new(120, 200),
     }
-    local enemies = {}
-    for i, typeId in ipairs(spawnOrder) do
-        local x, y = physics.pickSpawnPoint({
-            playerPos = { x = playerActor.pos.x, y = playerActor.pos.y },
-            avoid = placed,
-            minPlayerDist = 55,
-            minEnemyDist = 40,
-            fallbackOffsetX = (i - 3.5) * 28,
-            fallbackOffsetY = 50,
-        })
-        placed[#placed + 1] = { x = x, y = y }
-        enemies[#enemies + 1] = enemy:new(x, y, { type = typeId })
-    end
-
     cam = camera(playerActor.pos.x, playerActor.pos.y, zoom)
 
-    -- Push actors we want in the scene (player + enemies).
-    state:init(playerActor, unpack(enemies))
+    -- Sword and its split ribbon layers are separate coordinated scene actors.
+    state:init(playerActor, swordActor, trailBehind, trailFront, unpack(enemies))
 
     physics_selftest.run(playerActor, enemies)
 end
@@ -207,6 +219,19 @@ function love.draw()
     state:drawHud()
 end
 
+local function startPlayerSwingAt(screenX, screenY)
+    local playerActor = state:getActor("player")
+    if not playerActor or not playerActor.startSwing then
+        return
+    end
+
+    local worldX, worldY = screenX, screenY
+    if cam then
+        worldX, worldY = cam:worldCoords(screenX, screenY)
+    end
+    playerActor:startSwing(worldX, worldY)
+end
+
 function love.keypressed(k)
     if k == "escape" then
         love.event.quit()
@@ -223,18 +248,12 @@ function love.keypressed(k)
         end
         physics_selftest.run(state:getActor("player"), enemies)
     elseif k == "space" then
-        local playerActor = state:getActor("player")
-        if playerActor and playerActor.startSwing then
-            playerActor:startSwing()
-        end
+        startPlayerSwingAt(love.mouse.getPosition())
     end
 end
 
 function love.mousepressed(x, y, button)
     if button == 1 then
-        local playerActor = state:getActor("player")
-        if playerActor and playerActor.startSwing then
-            playerActor:startSwing()
-        end
+        startPlayerSwingAt(x, y)
     end
 end
