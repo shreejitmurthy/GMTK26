@@ -138,7 +138,7 @@ function state:update(dt)
 
         for _, actor in ipairs(self.actors) do
             if actor.syncFromCollider then
-                actor:syncFromCollider()
+                actor:syncFromCollider(dt)
             end
         end
 

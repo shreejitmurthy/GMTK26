@@ -2,6 +2,7 @@
 -- Decoupled sword swing moves PlayerAttack; hits drain plague countdown via state.
 
 require "scripts.actor"
+require "lib.spritesheet"
 local physics = require "scripts.physics"
 
 player = {}
@@ -11,6 +12,7 @@ setmetatable(player, { __index = actor })
 local ATTACK_W = 22
 local ATTACK_H = 8
 local SWING_DURATION = 0.35
+local SWING_SETTLE_DURATION = 0.16
 local SWING_STRETCH = math.rad(10)
 local SWING_ARC = math.pi + SWING_STRETCH * 2
 local SWING_START = -math.pi / 2 - SWING_STRETCH
@@ -21,6 +23,27 @@ local SWORD_HILT_GAP = 12
 local SWORD_HORIZONTAL_REST_TILT = math.rad(15)
 local SWORD_VERTICAL_REST_TILT = math.rad(35)
 local ENEMY_HIT_FLASH_DURATION = 0.18
+local PLAYER_SHEET_PATH = "res/images/plagueDoctorSheet.png"
+local PLAYER_FRAME_W = 25
+local PLAYER_FRAME_H = 32
+local PLAYER_FRAME_COUNT = 6
+local PLAYER_RUN_FRAME_DELAY = 0.1
+local PLAYER_IDLE_FRAME_DELAY = 0.3
+
+local function newDirectionalAnimation(spritesheet, row, delay)
+    return spritesheet:newAnimation(
+        { row, 1 },
+        { row, PLAYER_FRAME_COUNT },
+        delay
+    )
+end
+
+local function animationDirection(dx, dy)
+    if math.abs(dx) > math.abs(dy) then
+        return dx > 0 and "right" or "left"
+    end
+    return dy > 0 and "down" or "up"
+end
 
 -- Tunables: enemy hit drain (seconds) + invuln window after a hit.
 player.HIT_DAMAGE_SECONDS = 5
@@ -74,6 +97,46 @@ function player.weightedSwingEase(t)
         + stopCorrection * t * t * t * remaining * remaining
 end
 
+--- Eased arc progress with a fixed real-time terminal deceleration.
+function player.swingProgress(elapsed, duration, settleDuration)
+    elapsed = math.max(0, elapsed or 0)
+    duration = math.max(0, duration or 0)
+    settleDuration = math.max(0, settleDuration or SWING_SETTLE_DURATION)
+
+    if settleDuration == 0 then
+        if duration == 0 then
+            return 1
+        end
+        return player.weightedSwingEase(math.min(1, elapsed / duration))
+    end
+
+    -- The main phase and fixed settle phase meet with matching velocity and
+    -- acceleration. The tail's 2u - 2u^3 + u^4 motion only decelerates.
+    local curveCutoff = 0
+    if duration > 0 then
+        curveCutoff = 2 * duration / (settleDuration + 2 * duration)
+    end
+
+    local curveProgress
+    if duration > 0 and elapsed < duration then
+        curveProgress = curveCutoff * elapsed / duration
+    else
+        local settleProgress = math.min(1, (elapsed - duration) / settleDuration)
+        local deceleratingTail = 2 * settleProgress
+            - 2 * settleProgress * settleProgress * settleProgress
+            + settleProgress * settleProgress * settleProgress * settleProgress
+        curveProgress =
+            curveCutoff + (1 - curveCutoff) * deceleratingTail
+    end
+
+    return player.weightedSwingEase(curveProgress)
+end
+
+function player.swingTotalDuration(duration, settleDuration)
+    return math.max(0, duration or 0)
+        + math.max(0, settleDuration or SWING_SETTLE_DURATION)
+end
+
 --- Radial sword angle for an already-eased swing value.
 function player.swingAngle(baseAngle, easedProgress)
     easedProgress = math.max(0, math.min(1, easedProgress))
@@ -100,7 +163,31 @@ function player:new(x, y)
     local p = actor:new(x, y, "player")
     setmetatable(p, { __index = player })
 
-    p.img = love.graphics.newImage("res/images/player.png")
+    p.spritesheet = newSpritesheet(
+        PLAYER_SHEET_PATH,
+        PLAYER_FRAME_W,
+        PLAYER_FRAME_H
+    )
+    p.img = p.spritesheet.image
+    p.spriteW = PLAYER_FRAME_W
+    p.spriteH = PLAYER_FRAME_H
+    p.animations = {
+        run = {
+            right = newDirectionalAnimation(p.spritesheet, 1, PLAYER_RUN_FRAME_DELAY),
+            left = newDirectionalAnimation(p.spritesheet, 2, PLAYER_RUN_FRAME_DELAY),
+            down = newDirectionalAnimation(p.spritesheet, 3, PLAYER_RUN_FRAME_DELAY),
+            up = newDirectionalAnimation(p.spritesheet, 4, PLAYER_RUN_FRAME_DELAY),
+        },
+        idle = {
+            right = newDirectionalAnimation(p.spritesheet, 5, PLAYER_IDLE_FRAME_DELAY),
+            left = newDirectionalAnimation(p.spritesheet, 6, PLAYER_IDLE_FRAME_DELAY),
+            up = newDirectionalAnimation(p.spritesheet, 7, PLAYER_IDLE_FRAME_DELAY),
+            -- Row eight currently contains another up-facing idle animation.
+            down = newDirectionalAnimation(p.spritesheet, 8, PLAYER_IDLE_FRAME_DELAY),
+        },
+    }
+    p.animationDirection = "right"
+    p.current_animation = p.animations.idle[p.animationDirection]
     p.speed = 120
     p.controls = {
         left  = { "a", "left" },
@@ -121,6 +208,7 @@ function player:new(x, y)
     p.swinging = false
     p.swingT = 0
     p.swingDuration = SWING_DURATION
+    p.swingSettleDuration = SWING_SETTLE_DURATION
     p.swingBaseAngle = 0
     p.swingDirection = 1
     p.nextSwingDirection = 1
@@ -149,7 +237,7 @@ function player:new(x, y)
     }
 
     -- Slightly smaller than sprite for nicer wall sliding.
-    local spriteW, spriteH = p.img:getWidth(), p.img:getHeight()
+    local spriteW, spriteH = p.spriteW, p.spriteH
     local hitW = math.max(8, spriteW * 0.7)
     local hitH = math.max(8, spriteH * 0.7)
     p.hitW = hitW
@@ -319,12 +407,14 @@ function player:updateSwing(dt)
     end
 
     self.swingT = self.swingT + dt
-    local timeProgress = math.min(1, self.swingT / self.swingDuration)
-    local arcProgress = player.weightedSwingEase(timeProgress)
+    local arcProgress =
+        player.swingProgress(self.swingT, self.swingDuration, self.swingSettleDuration)
     self:updateSwordPose(arcProgress)
     self:syncAttackHitbox()
 
-    if timeProgress >= 1 then
+    local totalDuration =
+        player.swingTotalDuration(self.swingDuration, self.swingSettleDuration)
+    if self.swingT >= totalDuration then
         self.swinging = false
         self:disableAttackHitbox()
     end
@@ -388,7 +478,14 @@ function player:update(dt)
     if input.x ~= 0 or input.y ~= 0 then
         self.direction.x = input.x
         self.direction.y = input.y
+        self.animationDirection = animationDirection(input.x, input.y)
     end
+
+    local animationState =
+        (input.x ~= 0 or input.y ~= 0) and "run" or "idle"
+    self.current_animation =
+        self.animations[animationState][self.animationDirection]
+    self.current_animation:update(dt)
 
     local vx, vy = player.normalizedVelocity(input.x, input.y, self.speed)
     vx, vy = physics.applyEnemyResistance(self.collider, vx, vy, dt)
@@ -405,8 +502,8 @@ function player:syncFromCollider()
     self.y = self.pos.y
     -- Keep sword + PlayerAttack glued to body if we moved during the swing.
     if self.swinging then
-        local timeProgress = math.min(1, self.swingT / self.swingDuration)
-        local arcProgress = player.weightedSwingEase(timeProgress)
+        local arcProgress =
+            player.swingProgress(self.swingT, self.swingDuration, self.swingSettleDuration)
         self:updateSwordPose(arcProgress)
         self:syncAttackHitbox()
     elseif self.hasSwung then
@@ -430,15 +527,10 @@ function player:draw()
     else
         love.graphics.setColor(1, 1, 1, 1)
     end
-    love.graphics.draw(
-        self.img,
-        self.pos.x,
-        self.pos.y,
-        0,
-        1,
-        1,
-        self.img:getWidth() / 2,
-        self.img:getHeight() / 2
+    self.spritesheet:draw(
+        self.current_animation,
+        self.pos.x - self.spriteW / 2,
+        self.pos.y - self.spriteH / 2
     )
     love.graphics.setColor(1, 1, 1, 1)
 end
