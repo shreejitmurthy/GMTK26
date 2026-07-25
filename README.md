@@ -16,7 +16,7 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 - **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**) with a thin **Plague Tolerance** fuse. Enemy hits → `state:applyPlayerDamage` → `countdown:damage` (**5s** default, **0.6s** i-frames). **H** debug-damages **3s** (bypasses i-frames). Player sword hits do **not** drain your timer. At 0 → **EXTRACTED**
 - **Period HUD type:** `res/fonts/Italianno-Regular.ttf` (OFL) — copperplate / roundhand cursive for timer, labels, extract, help text
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
-- STI: not wired yet
+- **STI map:** `res/maps/map.lua` — one Victorian decaying courtyard; districts by props (Ash Market / Plague Well / Watch Yard)
 
 Physics loop: input → normalize → `setLinearVelocity` → swing pose + sync sensors → `world:update(dt)` → hit enter poll → sync draw/camera from collider.
 
@@ -109,8 +109,38 @@ Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:
 - Call **`world:update(dt)` every frame during gameplay** (via `physics.update`). Skipping this breaks collision and movement.
 
 ### Walls ↔ STI coordination
-- Stub arena walls via `physics.spawnTestArena` until STI lands.
-- STI object-layer → static `Wall` colliders should call `physics.addWallsFromObjects(objects)` (drop-in).
+- Map colliders come from object layers via `game_map.addColliders` → `physics.addWallsFromObjects` (fountain ellipse today; rectangles when walls/props land).
+- Playable clamp uses `game_map.getPlayableArea` → `physics.setPlayableArea`. Open plaza = **full map bounds** until outer walls exist.
+
+### Map contract (`res/maps/map.lua`) — one infested courtyard
+
+**One continuous Victorian/plague courtyard** on shared ornate cobble (`dungeon_tiles2`). Fountain is the eternal focal point (Nest B / Plague Well). West / center / east are **discernable by props + sparse decals**, not by foreign biome packs.
+
+**Primary tilesets only** for floors / walls / decay:
+
+| Tileset | firstgid | Role |
+|---|---|---|
+| `dungeon_tiles` | 1 | Props, soot/crack/wet decals, torches, ruin stubs |
+| `dungeon_tiles2` | 553 | Full-map cobble floor + fountain stamp |
+
+Do not reintroduce foreign biome packs (grass / hives / cartoon dungeon wallpaper). Districts are props + sparse decals on shared cobble.
+
+| Layer | Type | Role |
+|---|---|---|
+| `Floor Layer` | tile | Every cell 30×24 non-zero cobble (no gid 0 voids) |
+| `Decals A/B/C` | tile | A ash-market soot, B plague-well wet ring, C watch runners |
+| `Props` | tile | Dense west clutter / open center / sparse east torches |
+| `Fountain Layer` | tile | Center fountain stamp; perspective-sorted |
+| `Circle Colliders` | object | Fountain oval (keep position/tiles) |
+| `Rectangle Colliders` | object | Sparse solid props/ruins only — open flow |
+| `Spawns` | object | `player_start`, nests, enemies |
+
+**Art reset / re-export:**
+```bash
+love . -- --patch-nests
+```
+
+**Tiled:** edit `res/maps/map.tmx` → Export As `map.lua`. Keep fountain stamp + Circle Colliders ellipse.
 
 ### Plague timer (health)
 

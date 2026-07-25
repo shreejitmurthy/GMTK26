@@ -8,6 +8,7 @@ require "scripts.actor"
 local physics = require "scripts.physics"
 local countdown = require "scripts.countdown"
 local game_map = require "scripts.game_map"
+local atmosphere = require "scripts.atmosphere"
 require "scripts.player"
 require "scripts.sword"
 require "scripts.slash_trail"
@@ -86,7 +87,7 @@ function state:applyPlayerDamage(amount, source, opts)
     if self.countdown:isExpired() then
         self.extracted = true
         self.countdown:pause()
-        print("[countdown] EXTRACTED — plague time exhausted")
+        print("[countdown] EXTRACTED ΓÇö plague time exhausted")
     end
 
     return true, self.countdown:getRemaining()
@@ -103,6 +104,7 @@ function state:update(dt)
         if self.gameMap then
             game_map.update(self.gameMap, dt)
         end
+        atmosphere.update(dt)
 
         local playerActor = self:getActor("player")
 
@@ -112,7 +114,7 @@ function state:update(dt)
             if not self.extracted and self.countdown:isExpired() then
                 self.extracted = true
                 self.countdown:pause()
-                print("[countdown] EXTRACTED — plague time exhausted")
+                print("[countdown] EXTRACTED ΓÇö plague time exhausted")
             end
         end
 
@@ -137,6 +139,10 @@ function state:update(dt)
         physics.update(dt)
         -- Safety net: kinematic enemies never resolve vs Wall — re-clamp every frame.
         physics.clampAllEnemiesToPlayable()
+        -- Player is blocked by boundary Walls; clamp covers tunneling / edge cases.
+        if playerActor and playerActor.collider then
+            physics.clampColliderToPlayable(playerActor.collider)
+        end
 
         if not self.extracted and playerActor and playerActor.pollAttackHits then
             playerActor:pollAttackHits()
@@ -225,7 +231,7 @@ function state:drawHud()
     local sh = love.graphics.getHeight()
     local prevFont = love.graphics.getFont()
 
-    -- Hero HUD: plague timer (health) top-center — dominant readout.
+    -- Hero HUD: plague timer (health) top-center ΓÇö dominant readout.
     if self.countdown then
         local ratio = self.countdown:getRatio()
         local dmgPulse, dmgAmount = self.countdown:getDamagePulse()
@@ -242,7 +248,7 @@ function state:drawHud()
             g = 0.90 - 0.55 * t
             b = 0.78 - 0.65 * t
         end
-        -- Damage flash: brief white → red over the digits + fuse.
+        -- Damage flash: brief white ΓåÆ red over the digits + fuse.
         if dmgPulse > 0 then
             local flash = dmgPulse
             r = r + (1.0 - r) * flash * 0.85
@@ -293,7 +299,7 @@ function state:drawHud()
             love.graphics.setColor(r, g, b, 0.9 * a)
             love.graphics.rectangle("fill", fuseX, fuseY, filled, fuseH)
         end
-        -- Segment ticks → timer/fuse metaphor (not a solid HP chunk bar).
+        -- Segment ticks ΓåÆ timer/fuse metaphor (not a solid HP chunk bar).
         local segments = 6
         love.graphics.setColor(0.12, 0.08, 0.06, 0.55)
         for i = 1, segments - 1 do
@@ -341,7 +347,7 @@ function state:drawHud()
         return
     end
 
-    -- Secondary help: smaller, dimmer, bottom-left — must not compete with timer.
+    -- Secondary help: smaller, dimmer, bottom-left ΓÇö must not compete with timer.
     local helpFont = self.hudHelpFont or prevFont
     love.graphics.setFont(helpFont)
     love.graphics.setColor(1, 1, 1, 0.55)
@@ -351,7 +357,7 @@ function state:drawHud()
         sh - 40
     )
     love.graphics.print(
-        "WASD/Arrows move · Space/Click swing · H -3s · F1 debug · F2 selftest · Esc quit",
+        "WASD/Arrows move ┬╖ Space/Click swing ┬╖ H -3s ┬╖ F1 debug ┬╖ F2 selftest ┬╖ Esc quit",
         10,
         sh - 24
     )
@@ -406,24 +412,64 @@ function state:drawHud()
 end
 
 local function loadScriptFont(size)
-    -- Italianno: copperplate / roundhand cursive (18th–19th c. feel). OFL.
+    -- Italianno: copperplate / roundhand cursive (18thΓÇô19th c. feel). OFL.
     local font = love.graphics.newFont("res/fonts/Italianno-Regular.ttf", size)
     font:setFilter("linear", "linear")
     return font
 end
 
-function love.load()
+local function argvHas(argv, flag)
+    for _, value in ipairs(argv or {}) do
+        if value == flag then
+            return true
+        end
+    end
+    return false
+end
+
+function love.load(args)
+    local argv = args or arg or {}
+
+    -- Courtyard art reset (cobble floor + dungeon_tiles districts; fountain kept):
+    --   love . -- --patch-nests
+    if argvHas(argv, "--patch-nests") then
+        local patcher = require "scripts.map_patch_nests"
+        local map, luaPath, tmxPath = patcher.write("res/maps/map.lua", "res/maps/map.tmx")
+        local empty = patcher.countEmptyFloor(map)
+        print("[map_patch] wrote " .. tostring(luaPath))
+        print("[map_patch] wrote " .. tostring(tmxPath))
+        print(string.format("[map_patch] Floor Layer empty cells: %d (want 0)", empty))
+        love.event.quit()
+        return
+    end
+
     physics.init()
 
     state.gameMap = game_map.load("res/maps/map.lua")
+    atmosphere.load()
+    local playable = game_map.getPlayableArea(state.gameMap)
     physics.setPlayableArea(
-        0,
-        0,
-        state.gameMap.width * state.gameMap.tilewidth,
-        state.gameMap.height * state.gameMap.tileheight
+        playable.x,
+        playable.y,
+        playable.w,
+        playable.h,
+        playable.thickness
+    )
+    -- Outer Wall rim (player is dynamic and only stops on Wall). Map objects alone
+    -- are fountain/props — without this the player walks off the tiled courtyard.
+    local boundaryCount = physics.addBoundaryWalls(
+        playable.x,
+        playable.y,
+        playable.w,
+        playable.h,
+        playable.thickness
     )
     local mapColliderCount = game_map.addColliders(state.gameMap, physics)
-    print(string.format("[map] loaded res/maps/map.lua (%d colliders)", mapColliderCount))
+    print(string.format(
+        "[map] loaded res/maps/map.lua (%d colliders + %d boundary)",
+        mapColliderCount,
+        boundaryCount
+    ))
 
     -- Plague resistance window (seconds). Timer IS health.
     state.countdown = countdown.new({ duration = 90 })
@@ -433,21 +479,35 @@ function love.load()
     state.hudHelpFont = loadScriptFont(20)
     love.graphics.setFont(state.hudHelpFont)
 
-    local spawnX, spawnY = 200, 150
+    local spawnData = game_map.getSpawnPoints(state.gameMap)
+    local spawnX, spawnY = game_map.getPlayerStart(state.gameMap)
+    if not spawnX then
+        spawnX, spawnY = 200, 150
+        print("[map] warning: missing player_start; using plaza fallback")
+    end
 
     local playerActor = player:new(spawnX, spawnY)
     local swordActor = sword:new(playerActor)
     local trailBehind = slashTrail:new(playerActor, true)
     local trailFront = slashTrail:new(playerActor, false)
-    -- Map spawn positions are clear of the fountain collider.
-    local enemies = {
-        enemy:new(120, 100, { type = "chaser" }),
-        enemy:new(280, 100, { type = "chaser" }),
-        enemy:new(120, 200, { type = "fleer" }),
-        enemy:new(315, 120, { type = "keeper" }),
-        -- Purple ranger starts across the fountain so its LOS strafe is visible.
-        enemy:new(280, 200, { type = "ranger" }),
-    }
+
+    local enemies = {}
+    for _, point in ipairs(spawnData.enemies) do
+        local e = enemy:new(point.x, point.y, { type = point.type })
+        e.nest = point.nest
+        enemies[#enemies + 1] = e
+    end
+    if #enemies == 0 then
+        enemies = {
+            enemy:new(120, 100, { type = "chaser" }),
+            enemy:new(280, 100, { type = "chaser" }),
+            enemy:new(120, 200, { type = "fleer" }),
+            enemy:new(315, 120, { type = "keeper" }),
+            enemy:new(280, 200, { type = "ranger" }),
+        }
+        print("[map] warning: no Spawns enemies; using plaza fallbacks")
+    end
+
     cam = camera(playerActor.pos.x, playerActor.pos.y, zoom)
 
     -- Sword and its split ribbon layers are separate coordinated scene actors.
@@ -459,6 +519,10 @@ function love.load()
     end
 
     physics_selftest.run(playerActor, enemies)
+
+    if argvHas(argv, "--selftest-quit") then
+        love.event.quit()
+    end
 end
 
 function love.update(dt)
@@ -466,15 +530,18 @@ function love.update(dt)
 end
 
 function love.draw()
-    love.graphics.setBackgroundColor(0.5, 0.5, 0.5)
+    -- Near-black clear — map must fully cover playable cells (no grey voids).
+    love.graphics.setBackgroundColor(0.04, 0.04, 0.05)
 
     cam:attach()
     -- Perspective order: behind the fountain from above, in front from below.
     -- Body, sword, and trails move across the scenery layer as one stack.
     game_map.drawWithActors(state.gameMap, state.drawActors, state)
+    atmosphere.drawWorld()
     physics.drawDebug()
     cam:detach()
 
+    atmosphere.drawGrade()
     state:drawHud()
 end
 
@@ -510,7 +577,7 @@ function love.keypressed(k)
         -- Debug plague damage (bypasses i-frames for tuning).
         local ok, left = state:applyPlayerDamage(3, "debug", { bypassIFrames = true })
         if ok then
-            print(string.format("[countdown] damage 3.0 → %.1fs left", left))
+            print(string.format("[countdown] damage 3.0 ΓåÆ %.1fs left", left))
         end
     elseif k == "space" then
         if not state.extracted then

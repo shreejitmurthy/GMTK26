@@ -4,8 +4,17 @@ local sti = require "lib.sti"
 
 local game_map = {}
 
+-- Drawn under actors. Fountain is perspective-sorted with actors.
+-- Decals A/B/C + Props are optional nest-district overlays on the plaza.
 game_map.BELOW_ACTOR_LAYERS = {
     "Floor Layer",
+    "Decals A",
+    "Decals B",
+    "Decals C",
+    "Props",
+    -- Legacy / optional names
+    "Walls Layer",
+    "Props Layer",
 }
 
 game_map.PERSPECTIVE_ACTOR_LAYERS = {
@@ -15,6 +24,15 @@ game_map.PERSPECTIVE_ACTOR_LAYERS = {
 game_map.COLLIDER_LAYER_ORDER = {
     "Circle Colliders",
     "Rectangle Colliders",
+}
+
+game_map.OPTIONAL_TILE_LAYERS = {
+    "Decals A",
+    "Decals B",
+    "Decals C",
+    "Props",
+    "Walls Layer",
+    "Props Layer",
 }
 
 local function normalizePath(path)
@@ -120,24 +138,138 @@ local function loadMapTable(path)
     return map
 end
 
+local function objectCenter(object)
+    if object.shape == "point" then
+        return object.x, object.y
+    end
+    return object.x + (object.width or 0) * 0.5,
+        object.y + (object.height or 0) * 0.5
+end
+
+local function property(object, key, default)
+    local props = object.properties or {}
+    local value = props[key]
+    if value == nil then
+        return default
+    end
+    return value
+end
+
+local function parseSpawns(map)
+    local layer = map.layers["Spawns"]
+    local spawns = {
+        playerStart = nil,
+        enemies = {},
+        nests = {},
+        all = {},
+    }
+    if not layer or layer.type ~= "objectgroup" then
+        map.spawnData = spawns
+        return spawns
+    end
+
+    for _, object in ipairs(layer.objects or {}) do
+        local cx, cy = objectCenter(object)
+        local entry = {
+            name = object.name or "",
+            type = property(object, "type"),
+            nest = property(object, "nest"),
+            cleanseRadius = tonumber(property(object, "cleanseRadius")),
+            x = cx,
+            y = cy,
+            object = object,
+        }
+        spawns.all[#spawns.all + 1] = entry
+
+        local name = entry.name
+        if name == "player_start" then
+            spawns.playerStart = entry
+        elseif name == "nest_a" or name == "nest_b" or name == "nest_c" then
+            local key = name:sub(-1) -- a|b|c
+            spawns.nests[key] = entry
+            spawns.nests[name] = entry
+        elseif entry.type == "chaser"
+            or entry.type == "fleer"
+            or entry.type == "keeper"
+            or entry.type == "ranger"
+        then
+            spawns.enemies[#spawns.enemies + 1] = entry
+        end
+    end
+
+    map.spawnData = spawns
+    return spawns
+end
+
 function game_map.load(path)
     local map = sti(loadMapTable(path))
 
-    for _, layerNames in ipairs({
-        game_map.BELOW_ACTOR_LAYERS,
-        game_map.PERSPECTIVE_ACTOR_LAYERS,
-    }) do
-        for _, layerName in ipairs(layerNames) do
-            local layer = assert(map.layers[layerName], "Map is missing tile layer: " .. layerName)
+    for _, layerName in ipairs(game_map.BELOW_ACTOR_LAYERS) do
+        local layer = map.layers[layerName]
+        if layer == nil then
+            -- Walls/Props are optional for older maps; Floor is required.
+            if layerName == "Floor Layer" then
+                error("Map is missing tile layer: " .. layerName)
+            end
+        else
             assert(layer.type == "tilelayer", layerName .. " must be a tile layer")
         end
+    end
+    for _, layerName in ipairs(game_map.PERSPECTIVE_ACTOR_LAYERS) do
+        local layer = assert(map.layers[layerName], "Map is missing tile layer: " .. layerName)
+        assert(layer.type == "tilelayer", layerName .. " must be a tile layer")
     end
     for _, layerName in ipairs(game_map.COLLIDER_LAYER_ORDER) do
         local layer = assert(map.layers[layerName], "Map is missing collider layer: " .. layerName)
         assert(layer.type == "objectgroup", layerName .. " must be an object layer")
     end
 
+    parseSpawns(map)
     return map
+end
+
+function game_map.getSpawnPoints(map)
+    local data = map.spawnData or parseSpawns(map)
+    return data
+end
+
+function game_map.getNests(map)
+    local data = map.spawnData or parseSpawns(map)
+    return data.nests
+end
+
+function game_map.getPlayerStart(map)
+    local data = map.spawnData or parseSpawns(map)
+    if data.playerStart then
+        return data.playerStart.x, data.playerStart.y
+    end
+    return nil
+end
+
+--- Walkable AABB (map interior). Defaults to full map pixel bounds.
+--- main.lua feeds this to physics.setPlayableArea + addBoundaryWalls so the
+--- dynamic player cannot leave the tiled courtyard.
+--- Optional map properties playableX/Y/W/H + wallThickness override.
+function game_map.getPlayableArea(map)
+    local props = map.properties or {}
+    local x = tonumber(props.playableX)
+    local y = tonumber(props.playableY)
+    local w = tonumber(props.playableW)
+    local h = tonumber(props.playableH)
+    local thick = tonumber(props.wallThickness) or 16
+    if not (x and y and w and h) then
+        x = 0
+        y = 0
+        w = map.width * map.tilewidth
+        h = map.height * map.tileheight
+    end
+    return {
+        x = x,
+        y = y,
+        w = w,
+        h = h,
+        thickness = thick,
+    }
 end
 
 function game_map.addColliders(map, physics)
@@ -156,7 +288,7 @@ local function drawLayers(map, layerNames)
     love.graphics.setColor(1, 1, 1, 1)
     for _, layerName in ipairs(layerNames) do
         local layer = map.layers[layerName]
-        if layer.visible and layer.opacity > 0 then
+        if layer and layer.visible and layer.opacity > 0 then
             map:drawLayer(layer)
         end
     end

@@ -759,17 +759,27 @@ function physics.addEllipseWall(object)
     return wall
 end
 
---- Build walls from STI object tables.
+--- Build walls from STI object tables (rectangles + ellipses).
+--- Skips zero-area / non-collider shapes (points, polylines used as markers).
 function physics.addWallsFromObjects(objects)
     if not objects then
         return 0
     end
     local added = 0
     for _, object in ipairs(objects) do
-        if not object.shape or object.shape == "rectangle" then
+        local shape = object.shape
+        if shape == "point" or shape == "polyline" or shape == "polygon" then
+            -- Markers / future geometry — not static Wall fixtures here.
+        elseif (not shape or shape == "rectangle")
+            and (object.width or 0) > 0
+            and (object.height or 0) > 0
+        then
             physics.addWall(object.x, object.y, object.width, object.height)
             added = added + 1
-        elseif object.shape == "ellipse" then
+        elseif shape == "ellipse"
+            and (object.width or 0) > 0
+            and (object.height or 0) > 0
+        then
             physics.addEllipseWall(object)
             added = added + 1
         end
@@ -782,7 +792,9 @@ function physics.getWallCount()
 end
 
 --- Logical map bounds used by kinematic-enemy clamp helpers.
-function physics.setPlayableArea(x, y, w, h)
+--- Pass the INTERIOR walkable AABB (inside outer walls), not raw 0..mapSize.
+--- Optional thickness is the outer wall depth in px (used by embed recovery tests).
+function physics.setPlayableArea(x, y, w, h, thickness)
     physics.arena = {
         cx = x + w / 2,
         cy = y + h / 2,
@@ -790,9 +802,8 @@ function physics.setPlayableArea(x, y, w, h)
         top = y,
         width = w,
         height = h,
-        -- Retained for the existing recovery self-test; map edges themselves
-        -- are logical bounds rather than additional wall fixtures.
-        thickness = 16,
+        -- Outer wall depth; recovery self-test embeds just outside the interior.
+        thickness = thickness or 16,
         innerLeft = x,
         innerTop = y,
         innerRight = x + w,
@@ -801,11 +812,56 @@ function physics.setPlayableArea(x, y, w, h)
     return physics.arena
 end
 
+--- Solid rim just outside the playable interior so the dynamic Player cannot leave
+--- the map. Interior props/fountain stay separate; these walls are invisible
+--- (no drawW) because courtyard tiles already cover the playable AABB.
+function physics.addBoundaryWalls(x, y, w, h, thickness)
+    thickness = thickness or 16
+    local function edge(wx, wy, ww, wh)
+        local wall = physics.world:newRectangleCollider(wx, wy, ww, wh)
+        wall:setType("static")
+        wall:setCollisionClass("Wall")
+        wall.isBoundary = true
+        physics.walls[#physics.walls + 1] = wall
+        return wall
+    end
+    -- Outside the interior so every map tile stays walkable.
+    edge(x - thickness, y - thickness, w + thickness * 2, thickness) -- top
+    edge(x - thickness, y + h, w + thickness * 2, thickness) -- bottom
+    edge(x - thickness, y, thickness, h) -- left
+    edge(x + w, y, thickness, h) -- right
+    return 4
+end
+
+--- Hard clamp a dynamic body into the playable AABB (safety net vs tunneling).
+function physics.clampColliderToPlayable(collider)
+    local arena = physics.arena
+    if not arena or not collider then
+        return
+    end
+    local hw = collider.halfWidth or 4
+    local hh = collider.halfHeight or 4
+    local cx, cy = collider:getX(), collider:getY()
+    local nx = math.max(arena.innerLeft + hw, math.min(arena.innerRight - hw, cx))
+    local ny = math.max(arena.innerTop + hh, math.min(arena.innerBottom - hh, cy))
+    if nx ~= cx or ny ~= cy then
+        collider:setPosition(nx, ny)
+        local vx, vy = collider:getLinearVelocity()
+        if nx ~= cx then
+            vx = 0
+        end
+        if ny ~= cy then
+            vy = 0
+        end
+        collider:setLinearVelocity(vx, vy)
+    end
+end
+
 --- Draw stub arena walls so solid blockers are visible without F1.
 function physics.drawWalls()
     love.graphics.setColor(0.32, 0.32, 0.35, 1)
     for _, wall in ipairs(physics.walls) do
-        if wall.drawW then
+        if wall.drawW and not wall.isBoundary then
             love.graphics.rectangle("fill", wall.drawX, wall.drawY, wall.drawW, wall.drawH)
         end
     end
