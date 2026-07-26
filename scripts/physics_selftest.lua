@@ -239,8 +239,8 @@ function selftest.run(playerActor, enemyActors)
     if byType.chaser then
         local c = byType.chaser
         allOk = check("chaser default fields",
-            nearlyEqual(c.speed, 62) and nearlyEqual(c.aggroRange, 140)
-                and nearlyEqual(c.stopDistance, 28)
+            nearlyEqual(c.speed, 58) and nearlyEqual(c.aggroRange, 140)
+                and nearlyEqual(c.stopDistance, 32)
                 and nearlyEqual(c.stopDeadzone, 6)
                 and nearlyEqual(c.separationDistance, 28)
                 and nearlyEqual(c.separationSpeed, 24)
@@ -265,26 +265,31 @@ function selftest.run(playerActor, enemyActors)
         local k = byType.keeper
         allOk = check("keeper default fields",
             nearlyEqual(k.speed, 48) and nearlyEqual(k.aggroRange, 160)
-                and nearlyEqual(k.preferredDistance, 48) and nearlyEqual(k.band, 14)
+                and nearlyEqual(k.preferredDistance, 44) and nearlyEqual(k.band, 10)
                 and k.attackStyle == "slam"
-                and nearlyEqual(k.attackDamageSeconds, 8),
-            string.format("speed=%.0f aggro=%.0f pref=%.0f style=%s",
-                k.speed or -1, k.aggroRange or -1,
-                k.preferredDistance or -1, tostring(k.attackStyle))) and allOk
+                and nearlyEqual(k.attackDamageSeconds, 8)
+                and nearlyEqual(k.attackRange, 58)
+                and k.preferredDistance + k.band <= k.attackRange + 0.01,
+            string.format("speed=%.0f pref=%.0f±%.0f range=%.0f style=%s",
+                k.speed or -1, k.preferredDistance or -1, k.band or -1,
+                k.attackRange or -1, tostring(k.attackStyle))) and allOk
     end
     if byType.ranger then
         local r = byType.ranger
         allOk = check("ranger default fields",
             nearlyEqual(r.speed, 65) and nearlyEqual(r.aggroRange, 190)
                 and nearlyEqual(r.safeDistance, 100)
-                and nearlyEqual(r.safeDeadzone, 10)
+                and nearlyEqual(r.safeDeadzone, 8)
                 and r.attackStyle == "shot"
                 and nearlyEqual(r.attackDamageSeconds, 5)
-                and nearlyEqual(r.attackTelegraph, 0.45)
+                and nearlyEqual(r.attackTelegraph, 0.5)
+                and nearlyEqual(r.minShotDistance, 90)
+                and nearlyEqual(r.maxShotDistance, 110)
                 and r.debugLetter == "R",
-            string.format("speed=%.0f safe=%.0f style=%s dmg=%s",
+            string.format("speed=%.0f safe=%.0f style=%s dmg=%s band=%s-%s",
                 r.speed or -1, r.safeDistance or -1,
-                tostring(r.attackStyle), tostring(r.attackDamageSeconds))) and allOk
+                tostring(r.attackStyle), tostring(r.attackDamageSeconds),
+                tostring(r.minShotDistance), tostring(r.maxShotDistance))) and allOk
 
         local clearLOS = physics.hasLineOfSight(190, 140, 290, 140)
         local blockedLOS = physics.hasLineOfSight(190, 200, 290, 200)

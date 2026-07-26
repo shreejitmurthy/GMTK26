@@ -14,7 +14,6 @@ local DEFAULT_HIT_H = 14
 local HURT_FLASH_DURATION = 0.15
 local ATTACK_WINDUP_DURATION = 0.18 -- fallback flash scale for presentation
 local DEATH_DURATION = 0.2
-local HEALTH_BAR_NEAR_DISTANCE = 72
 local HEALTH_BAR_W = 18
 local HEALTH_BAR_H = 2
 
@@ -579,15 +578,13 @@ function enemy:draw()
             * activeMotion
     end
     local anticipation = 0
-    -- Telegraph anticipation only — recovery must not keep telegraph squash.
+    -- Telegraph anticipation grows toward the hit — recovery has none.
     if self.attackState == "telegraph" and not flashing then
         local tele = math.max(0.01, self.attackTelegraph or ATTACK_WINDUP_DURATION)
-        anticipation = math.max(
-            0,
-            math.min(1, (self.attackWindupTimer or self.attackFlash or 0) / tele)
-        )
+        local left = self.attackWindupTimer or self.attackFlash or 0
+        anticipation = math.max(0, math.min(1, 1 - left / tele))
     elseif self.attackState == "strike" and not flashing then
-        anticipation = 0.35
+        anticipation = 0.25
     end
     local attackScale = profile.attackScale * anticipation
     local scaleX = squashX
@@ -616,15 +613,15 @@ function enemy:draw()
     if flashing then
         flashColor = { 0.88, 0.43, 0.38 }
         flashAmount = 0.78
-    elseif attackVisual then
-        -- Warm warning flash only while telegraphing / striking.
-        local pulse = 0.5 + 0.5 * math.sin((self.attackFlash or 0) * 70)
-        flashColor = { 0.9, 0.77, 0.47 }
-        local baseAmount = self.enemyType == "ranger" and 0.52 or 0.38
-        if self.attackState == "strike" then
-            baseAmount = baseAmount * 0.55
-        end
-        flashAmount = baseAmount + pulse * 0.12
+    elseif self.attackState == "telegraph" then
+        -- Strong, obvious tell — recovery has no tint.
+        local pulse = 0.5 + 0.5 * math.sin((self.attackFlash or 0) * 55)
+        flashColor = { 0.95, 0.78, 0.32 }
+        local baseAmount = self.enemyType == "ranger" and 0.62 or 0.55
+        flashAmount = baseAmount + pulse * 0.18
+    elseif self.attackState == "strike" then
+        flashColor = { 0.95, 0.55, 0.28 }
+        flashAmount = 0.28
     end
     local flipX = (self.facing and self.facing.x < 0) and -1 or 1
 
@@ -672,12 +669,13 @@ function enemy:draw()
     love.graphics.pop()
     love.graphics.setColor(1, 1, 1, 1)
 
+    -- HP bar only when damaged or actively committing an attack (not idle proximity).
     local showHealth = not self.dying
         and self.hp > 0
         and (
             self.hp < self.maxHp
-            or attackVisual
-            or (self.playerDistance or math.huge) <= HEALTH_BAR_NEAR_DISTANCE
+            or self.attackState == "telegraph"
+            or self.attackState == "strike"
         )
     if showHealth then
         local barX = self.pos.x - HEALTH_BAR_W / 2

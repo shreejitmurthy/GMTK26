@@ -196,13 +196,28 @@ function enemy_test.runSmoke(stateRef, playerActor)
         -- Deliberate hit + dodge checks for each attack identity.
         -- Use a clear plaza point (player start), not the fountain center.
         local clearX, clearY = 200, 300
-        local function resetPlayerCombat()
+        local function resetPlayerCombat(remaining)
             playerActor.hurtIFrame = 0
             playerActor.enemyHitCount = 0
             if stateRef.countdown then
-                stateRef.countdown.remaining = 80
+                stateRef.countdown.remaining = remaining or 80
                 stateRef.countdown.paused = true
             end
+        end
+        local function expectDrain(before, amount, label)
+            local left = stateRef.countdown:getRemaining()
+            local okDrain = left <= before - amount + 0.05
+                and left >= before - amount - 0.05
+            if not okDrain then
+                print(string.format(
+                    "[enemy_test] FAIL: %s expected -%ds (%.1f→%.1f)",
+                    label,
+                    amount,
+                    before,
+                    left
+                ))
+            end
+            return okDrain
         end
 
         local function stepEnemy(e, frames)
@@ -217,9 +232,9 @@ function enemy_test.runSmoke(stateRef, playerActor)
             end
         end
 
-        -- Keeper slam: inside circle = hit, outside = dodge.
+        -- Keeper slam: inside = −8s once; outside = dodge.
         do
-            resetPlayerCombat()
+            resetPlayerCombat(80)
             local k = enemy:new(clearX, clearY, { type = "keeper" })
             enemy_attacks.cancel(k)
             k.attackCooldownTimer = 0
@@ -227,25 +242,24 @@ function enemy_test.runSmoke(stateRef, playerActor)
             playerActor:syncFromCollider()
             stepEnemy(k, 1)
             local teleOk = k.attackState == "telegraph" and playerActor.enemyHitCount == 0
-            stepEnemy(k, 50)
-            local hitOk = playerActor.enemyHitCount >= 1
-                and stateRef.countdown:getRemaining() <= 80 - 7.9
+            stepEnemy(k, 55)
+            local hitOk = playerActor.enemyHitCount == 1
+                and expectDrain(80, 8, "keeper slam")
             k:destroyNow({ reward = false })
 
-            resetPlayerCombat()
+            resetPlayerCombat(80)
             k = enemy:new(clearX, clearY, { type = "keeper" })
             enemy_attacks.cancel(k)
             k.attackCooldownTimer = 0
             playerActor.collider:setPosition(k.collider:getX() + 10, k.collider:getY())
             playerActor:syncFromCollider()
             stepEnemy(k, 1)
-            -- Sidestep out of the danger circle during telegraph.
             playerActor.collider:setPosition(
-                k.collider:getX() + (k.slamRadius or 38) + 20,
+                k.collider:getX() + (k.slamRadius or 40) + 22,
                 k.collider:getY()
             )
             playerActor:syncFromCollider()
-            stepEnemy(k, 50)
+            stepEnemy(k, 55)
             local dodgeOk = playerActor.enemyHitCount == 0
             k:destroyNow({ reward = false })
             if not (teleOk and hitOk and dodgeOk) then
@@ -255,34 +269,35 @@ function enemy_test.runSmoke(stateRef, playerActor)
                     tostring(teleOk), tostring(hitOk), tostring(dodgeOk)
                 ))
             else
-                print("[enemy_test] PASS: keeper slam hit inside / dodge outside")
+                print("[enemy_test] PASS: keeper slam −8s hit / dodge outside")
             end
         end
 
-        -- Chaser lunge: standing in path = hit; sidestep = dodge.
+        -- Chaser lunge: −4s once; sidestep dodge.
         do
-            resetPlayerCombat()
-            local c = enemy:new(clearX - 28, clearY, { type = "chaser" })
+            resetPlayerCombat(80)
+            local c = enemy:new(clearX - 26, clearY, { type = "chaser" })
             enemy_attacks.cancel(c)
             c.attackCooldownTimer = 0
             playerActor.collider:setPosition(clearX, clearY)
             playerActor:syncFromCollider()
             stepEnemy(c, 1)
             local teleOk = c.attackState == "telegraph" and playerActor.enemyHitCount == 0
-            stepEnemy(c, 45)
-            local hitOk = playerActor.enemyHitCount >= 1
+            stepEnemy(c, 50)
+            local hitOk = playerActor.enemyHitCount == 1
+                and expectDrain(80, 4, "chaser lunge")
             c:destroyNow({ reward = false })
 
-            resetPlayerCombat()
-            c = enemy:new(clearX - 28, clearY, { type = "chaser" })
+            resetPlayerCombat(80)
+            c = enemy:new(clearX - 26, clearY, { type = "chaser" })
             enemy_attacks.cancel(c)
             c.attackCooldownTimer = 0
             playerActor.collider:setPosition(clearX, clearY)
             playerActor:syncFromCollider()
             stepEnemy(c, 1)
-            playerActor.collider:setPosition(clearX, clearY + 42)
+            playerActor.collider:setPosition(clearX, clearY + 44)
             playerActor:syncFromCollider()
-            stepEnemy(c, 45)
+            stepEnemy(c, 50)
             local dodgeOk = playerActor.enemyHitCount == 0
             c:destroyNow({ reward = false })
             if not (teleOk and hitOk and dodgeOk) then
@@ -292,34 +307,35 @@ function enemy_test.runSmoke(stateRef, playerActor)
                     tostring(teleOk), tostring(hitOk), tostring(dodgeOk)
                 ))
             else
-                print("[enemy_test] PASS: chaser lunge hit / sidestep dodge")
+                print("[enemy_test] PASS: chaser lunge −4s hit / sidestep dodge")
             end
         end
 
-        -- Fleer pounce: contact during strike hits; sidestep dodges.
+        -- Fleer pounce: −3s once; sidestep dodge.
         do
-            resetPlayerCombat()
-            local f = enemy:new(clearX - 36, clearY, { type = "fleer" })
+            resetPlayerCombat(80)
+            local f = enemy:new(clearX - 34, clearY, { type = "fleer" })
             enemy_attacks.cancel(f)
             f.attackCooldownTimer = 0
             playerActor.collider:setPosition(clearX, clearY)
             playerActor:syncFromCollider()
             stepEnemy(f, 1)
             local teleOk = f.attackState == "telegraph" and playerActor.enemyHitCount == 0
-            stepEnemy(f, 55)
-            local hitOk = playerActor.enemyHitCount >= 1
+            stepEnemy(f, 60)
+            local hitOk = playerActor.enemyHitCount == 1
+                and expectDrain(80, 3, "fleer pounce")
             f:destroyNow({ reward = false })
 
-            resetPlayerCombat()
-            f = enemy:new(clearX - 36, clearY, { type = "fleer" })
+            resetPlayerCombat(80)
+            f = enemy:new(clearX - 34, clearY, { type = "fleer" })
             enemy_attacks.cancel(f)
             f.attackCooldownTimer = 0
             playerActor.collider:setPosition(clearX, clearY)
             playerActor:syncFromCollider()
             stepEnemy(f, 1)
-            playerActor.collider:setPosition(clearX, clearY + 48)
+            playerActor.collider:setPosition(clearX, clearY + 50)
             playerActor:syncFromCollider()
-            stepEnemy(f, 55)
+            stepEnemy(f, 60)
             local dodgeOk = playerActor.enemyHitCount == 0
             f:destroyNow({ reward = false })
             if not (teleOk and hitOk and dodgeOk) then
@@ -329,13 +345,13 @@ function enemy_test.runSmoke(stateRef, playerActor)
                     tostring(teleOk), tostring(hitOk), tostring(dodgeOk)
                 ))
             else
-                print("[enemy_test] PASS: fleer pounce hit / sidestep dodge")
+                print("[enemy_test] PASS: fleer pounce −3s hit / sidestep dodge")
             end
         end
 
-        -- Ranger shot: standing in lane = hit; sidestep = dodge.
+        -- Ranger shot: −5s once; sidestep dodge.
         do
-            resetPlayerCombat()
+            resetPlayerCombat(80)
             enemy_attacks.clearAllProjectiles()
             local r = enemy:new(clearX + 100, clearY, { type = "ranger" })
             enemy_attacks.cancel(r)
@@ -344,21 +360,22 @@ function enemy_test.runSmoke(stateRef, playerActor)
             playerActor:syncFromCollider()
             stepEnemy(r, 1)
             local teleOk = r.attackState == "telegraph" and playerActor.enemyHitCount == 0
-            stepEnemy(r, 90)
-            local hitOk = playerActor.enemyHitCount >= 1
+            stepEnemy(r, 100)
+            local hitOk = playerActor.enemyHitCount == 1
+                and expectDrain(80, 5, "ranger shot")
             r:destroyNow({ reward = false })
             enemy_attacks.clearAllProjectiles()
 
-            resetPlayerCombat()
+            resetPlayerCombat(80)
             r = enemy:new(clearX + 100, clearY, { type = "ranger" })
             enemy_attacks.cancel(r)
             r.attackCooldownTimer = 0
             playerActor.collider:setPosition(clearX, clearY)
             playerActor:syncFromCollider()
             stepEnemy(r, 1)
-            playerActor.collider:setPosition(clearX, clearY + 40)
+            playerActor.collider:setPosition(clearX, clearY + 42)
             playerActor:syncFromCollider()
-            stepEnemy(r, 90)
+            stepEnemy(r, 100)
             local dodgeOk = playerActor.enemyHitCount == 0
             r:destroyNow({ reward = false })
             enemy_attacks.clearAllProjectiles()
@@ -369,7 +386,7 @@ function enemy_test.runSmoke(stateRef, playerActor)
                     tostring(teleOk), tostring(hitOk), tostring(dodgeOk)
                 ))
             else
-                print("[enemy_test] PASS: ranger shot hit / sidestep dodge")
+                print("[enemy_test] PASS: ranger shot −5s hit / sidestep dodge")
             end
         end
 

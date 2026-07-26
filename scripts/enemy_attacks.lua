@@ -11,47 +11,51 @@ local ATTACK_DEFAULTS = {
     chaser = {
         attackStyle = "lunge",
         attackDamageSeconds = 4,
-        attackTelegraph = 0.25,
-        attackStrike = 0.18,
-        attackRecovery = 0.9,
-        attackRange = 42,
-        lungeSpeed = 240,
-        hitRadius = 22,
-        attackPostGap = 0.45,
+        -- Longer tell, shorter bite — sidestep is the counter.
+        attackTelegraph = 0.34,
+        attackStrike = 0.14,
+        attackRecovery = 1.05,
+        attackRange = 38,
+        lungeSpeed = 200,
+        hitRadius = 18,
+        attackPostGap = 0.65,
+        telegraphReach = 34,
     },
     fleer = {
         attackStyle = "pounce",
         attackDamageSeconds = 3,
-        attackTelegraph = 0.35,
-        attackStrike = 0.32,
-        attackRecovery = 0.75,
-        attackRange = 58,
-        pounceSpeed = 280,
-        hitRadius = 20,
-        attackPostGap = 0.4,
+        attackTelegraph = 0.4,
+        attackStrike = 0.28,
+        attackRecovery = 0.9,
+        attackRange = 56,
+        pounceSpeed = 250,
+        hitRadius = 18,
+        attackPostGap = 0.55,
+        telegraphReach = 48,
     },
     keeper = {
         attackStyle = "slam",
         attackDamageSeconds = 8,
-        attackTelegraph = 0.65,
+        attackTelegraph = 0.7,
         attackStrike = 0.1,
-        attackRecovery = 1.25,
-        attackRange = 54,
-        slamRadius = 38,
-        attackPostGap = 0.5,
+        attackRecovery = 1.35,
+        -- Must cover preferredDistance ± band so hold ring can slam.
+        attackRange = 58,
+        slamRadius = 40,
+        attackPostGap = 0.55,
     },
     ranger = {
         attackStyle = "shot",
         attackDamageSeconds = 5,
-        attackTelegraph = 0.45,
+        attackTelegraph = 0.5,
         attackStrike = 0.06,
-        attackRecovery = 1.5,
+        attackRecovery = 1.55,
         attackRange = 170,
         minShotDistance = 90,
         maxShotDistance = 110,
-        projectileSpeed = 150,
-        projectileRadius = 4,
-        attackPostGap = 0.35,
+        projectileSpeed = 125,
+        projectileRadius = 5,
+        attackPostGap = 0.4,
     },
 }
 
@@ -71,6 +75,7 @@ local ATTACK_FIELDS = {
     "maxShotDistance",
     "projectileSpeed",
     "projectileRadius",
+    "telegraphReach",
 }
 
 function enemy_attacks.defaultsFor(typeId)
@@ -513,45 +518,100 @@ function enemy_attacks.updateProjectiles(dt, player)
     end
 end
 
-function enemy_attacks.drawWorld(e)
-    if not e or e.dead then
+local function drawLungeTelegraph(e)
+    if e.attackState ~= "telegraph" or not e.collider then
         return
     end
-    if e.attackStyle == "slam"
+    local ex, ey = e.collider:getX(), e.collider:getY()
+    local reach = e.telegraphReach or 36
+    local tipX = ex + e.attackDirX * reach
+    local tipY = ey + e.attackDirY * reach
+    local sideX = -e.attackDirY
+    local sideY = e.attackDirX
+    local halfW = 7
+    local pulse = 0.55 + 0.45 * math.sin((e.attackTimer or 0) * 22)
+    love.graphics.setColor(0.95, 0.55, 0.2, 0.22 * pulse)
+    love.graphics.polygon(
+        "fill",
+        ex + sideX * 3,
+        ey + sideY * 3,
+        ex - sideX * 3,
+        ey - sideY * 3,
+        tipX - sideX * halfW,
+        tipY - sideY * halfW,
+        tipX + sideX * halfW,
+        tipY + sideY * halfW
+    )
+    love.graphics.setColor(0.98, 0.7, 0.25, 0.85 * pulse)
+    love.graphics.setLineWidth(1.5)
+    love.graphics.line(ex, ey, tipX, tipY)
+    love.graphics.circle("line", tipX, tipY, 3)
+end
+
+function enemy_attacks.drawWorld(e)
+    if not e or e.dead or not e.collider then
+        return
+    end
+    local style = e.attackStyle or "lunge"
+    if style == "lunge" or style == "pounce" then
+        drawLungeTelegraph(e)
+    elseif style == "slam"
         and (e.attackState == "telegraph" or e.attackState == "strike")
         and e.slamX
         and e.slamY
     then
-        local r = e.slamRadius or 38
-        local pulse = e.attackState == "telegraph"
-            and (0.45 + 0.35 * math.sin((e.attackTimer or 0) * 18))
-            or 0.85
-        love.graphics.setColor(0.95, 0.25, 0.2, pulse * 0.35)
-        love.graphics.circle("fill", e.slamX, e.slamY, r)
-        love.graphics.setColor(0.95, 0.35, 0.25, pulse)
-        love.graphics.setLineWidth(1.5)
+        local r = e.slamRadius or 40
+        local tele = e.attackState == "telegraph"
+        local pulse = tele
+            and (0.5 + 0.5 * math.sin((e.attackTimer or 0) * 16))
+            or 1
+        -- Growing fill during telegraph so leaving the circle is obvious.
+        local fillR = tele
+            and (r * (0.55 + 0.45 * (1 - math.min(1, (e.attackTimer or 0) / math.max(0.01, e.attackTelegraph or 0.7)))))
+            or r
+        love.graphics.setColor(0.95, 0.22, 0.18, 0.2 + 0.18 * pulse)
+        love.graphics.circle("fill", e.slamX, e.slamY, fillR)
+        love.graphics.setColor(0.98, 0.35, 0.22, 0.55 + 0.4 * pulse)
+        love.graphics.setLineWidth(2)
         love.graphics.circle("line", e.slamX, e.slamY, r)
-    end
-    if e.attackStyle == "shot" and e.attackState == "telegraph" then
+        love.graphics.setColor(1, 0.85, 0.45, 0.35 * pulse)
+        love.graphics.circle("line", e.slamX, e.slamY, r * 0.55)
+    elseif style == "shot" and e.attackState == "telegraph" then
         local ex, ey = e.collider:getX(), e.collider:getY()
-        love.graphics.setColor(0.85, 0.55, 0.95, 0.55)
-        love.graphics.setLineWidth(1)
-        love.graphics.line(
-            ex,
-            ey,
-            ex + e.attackDirX * 40,
-            ey + e.attackDirY * 40
-        )
+        local reach = 96
+        local tipX = ex + e.attackDirX * reach
+        local tipY = ey + e.attackDirY * reach
+        local pulse = 0.5 + 0.5 * math.sin((e.attackTimer or 0) * 20)
+        love.graphics.setColor(0.85, 0.45, 0.95, 0.2 + 0.15 * pulse)
+        love.graphics.setLineWidth(4)
+        love.graphics.line(ex, ey, tipX, tipY)
+        love.graphics.setColor(0.95, 0.7, 1, 0.75 + 0.2 * pulse)
+        love.graphics.setLineWidth(1.5)
+        love.graphics.line(ex, ey, tipX, tipY)
+        -- Ghost shot along the locked lane.
+        local t = 1 - math.min(1, (e.attackTimer or 0) / math.max(0.01, e.attackTelegraph or 0.5))
+        local gx = ex + e.attackDirX * (18 + t * 50)
+        local gy = ey + e.attackDirY * (18 + t * 50)
+        love.graphics.setColor(0.9, 0.55, 1, 0.45 + 0.35 * pulse)
+        love.graphics.circle("fill", gx, gy, (e.projectileRadius or 5) + 1)
+        love.graphics.setColor(1, 0.9, 1, 0.7)
+        love.graphics.circle("line", gx, gy, (e.projectileRadius or 5) + 2)
     end
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function enemy_attacks.drawProjectiles()
     for _, p in ipairs(projectiles) do
-        love.graphics.setColor(0.85, 0.45, 0.95, 0.95)
+        love.graphics.setColor(0.15, 0.08, 0.18, 0.35)
+        love.graphics.circle("fill", p.x + 1, p.y + 1, p.r + 1)
+        love.graphics.setColor(0.9, 0.5, 1, 1)
         love.graphics.circle("fill", p.x, p.y, p.r)
-        love.graphics.setColor(1, 0.85, 1, 0.7)
-        love.graphics.circle("line", p.x, p.y, p.r + 1)
+        love.graphics.setColor(1, 0.9, 1, 0.9)
+        love.graphics.setLineWidth(1.5)
+        love.graphics.circle("line", p.x, p.y, p.r + 1.5)
     end
+    love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
