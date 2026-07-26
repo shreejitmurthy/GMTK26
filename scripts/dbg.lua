@@ -2,7 +2,7 @@ local ui_font = require "scripts.ui_font"
 
 debug_font = ui_font.new("res/fonts/RobotoMono-VariableFont_wght.ttf", 12)
 local maxWidth = 0
-local lineHeight = debug_font:getHeight()
+local lineHeight = ui_font.getHeight(debug_font)
 local padding = 5
 function addDebugData(components, format, ...)
     local str = string.format(format, ...)
@@ -11,7 +11,7 @@ end
 function drawDebugData(x, y)
     -- required size of the debug box
     for _, str in ipairs(components) do
-        local textWidth = debug_font:getWidth(str)
+        local textWidth = ui_font.getWidth(debug_font, str)
         maxWidth = math.max(maxWidth, textWidth)
     end
 
@@ -26,7 +26,12 @@ function drawDebugData(x, y)
         love.graphics.setColor(1, 1, 1, 1)
 
         for i, str in ipairs(components) do
-            love.graphics.print(str, x, y + ((i-1) * lineHeight))
+            ui_font.print(
+                debug_font,
+                str,
+                x,
+                y + ((i - 1) * lineHeight)
+            )
         end
     end
 end

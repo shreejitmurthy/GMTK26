@@ -7,8 +7,10 @@ local game_map = require "scripts.game_map"
 local nests = {}
 
 nests.CLEANSE_SECONDS = 2.0
---- Serum exposure paid once when a hold-cleanse attempt first begins on a site.
+--- District exposure escalates as the doctor carries more sealed plague.
 nests.CLEANSE_START_COST_SECONDS = 2
+nests.CLEANSE_COST_PER_POTION = 1
+nests.WELL_CLEANSE_START_COST_SECONDS = 6
 nests.PROGRESS_DECAY_PER_SEC = 2.5
 --- Hold this key while inside radius to channel (walking alone does not cleanse).
 nests.CLEANSE_HOLD_KEY = "e"
@@ -77,6 +79,15 @@ function nests.countDistrictCleansed(list)
         end
     end
     return n
+end
+
+--- Exposure is paid once when channeling begins: 2s, 3s, 4s, then 6s at the Well.
+function nests.exposureCost(list, nest)
+    if nests.isWell(nest) then
+        return nests.WELL_CLEANSE_START_COST_SECONDS
+    end
+    return nests.CLEANSE_START_COST_SECONDS
+        + nests.countDistrictCleansed(list) * nests.CLEANSE_COST_PER_POTION
 end
 
 function nests.districtsSealed(list)
@@ -201,9 +212,15 @@ function nests.promptText(list)
         )
     end
     if nest.isWell then
-        return "Hold E to cleanse the Plague Well"
+        return string.format(
+            "Hold E to cleanse the Plague Well (-%ds)",
+            nests.exposureCost(list, nest)
+        )
     end
-    return "Hold E to collect potion"
+    return string.format(
+        "Hold E to collect potion (-%ds)",
+        nests.exposureCost(list, nest)
+    )
 end
 
 local function dist2(ax, ay, bx, by)
@@ -271,11 +288,12 @@ function nests.update(state, dt)
             if inside and holding and not inIFrames and not isLockedWell then
                 nest.channeling = true
                 if nest.progress <= 0 and not nest.paidStartCost and state.countdown then
-                    state.countdown:damage(nests.CLEANSE_START_COST_SECONDS)
+                    local exposureCost = nests.exposureCost(list, nest)
+                    state.countdown:damage(exposureCost)
                     nest.paidStartCost = true
                     print(string.format(
                         "[nest] serum exposure -%ds on nest_%s (%.1fs left)",
-                        nests.CLEANSE_START_COST_SECONDS,
+                        exposureCost,
                         nest.id,
                         state.countdown:getRemaining()
                     ))

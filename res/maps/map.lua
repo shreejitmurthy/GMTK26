@@ -9,20 +9,20 @@ return {
   height = 24,
   tilewidth = 16,
   tileheight = 16,
-  nextlayerid = 11,
-  nextobjectid = 36,
+  nextlayerid = 12,
+  nextobjectid = 37,
   properties = {
-    nestA = "Ash Market",
-    nestB = "Ossuary",
-    nestC = "Watch Yard",
-    nestWell = "Plague Well",
-    playableH = 352,
-    playableW = 448,
-    playableX = 16,
-    playableY = 16,
-    sector = "infested_courtyard",
-    tilesetNote = "One cobble court; seal 3 district nests, then cleanse the locked Plague Well fountain.",
-    wallThickness = 16
+    ["nestA"] = "Ash Market",
+    ["nestB"] = "Ossuary",
+    ["nestC"] = "Watch Yard",
+    ["nestWell"] = "Plague Well",
+    ["playableH"] = 352,
+    ["playableW"] = 448,
+    ["playableX"] = 16,
+    ["playableY"] = 16,
+    ["sector"] = "infested_courtyard",
+    ["tilesetNote"] = "One cobble court; seal 3 district nests, then cleanse the locked Plague Well fountain.",
+    ["wallThickness"] = 16
   },
   tilesets = {
     {
@@ -43,22 +43,21 @@ return {
   },
   layers = {
     {
-      class = "",
-      width = 30,
-      height = 24,
-      properties = {
-      },
       type = "tilelayer",
       x = 0,
       y = 0,
+      width = 30,
+      height = 24,
       id = 1,
       name = "Floor Layer",
+      class = "",
       visible = true,
       opacity = 1,
       offsetx = 0,
       offsety = 0,
       parallaxx = 1,
       parallaxy = 1,
+      properties = {},
       encoding = "lua",
       data = {
         1577, 1578, 1579, 1580, 1581, 1582, 1583, 1577, 1578, 1579, 1580, 1581, 1582, 1583, 1577, 1578, 1579, 1580, 1581, 1582, 1583, 1577, 1578, 1579, 1580, 1581, 1582, 1583, 1577, 1578,
@@ -88,22 +87,21 @@ return {
       }
     },
     {
-      class = "",
-      width = 30,
-      height = 24,
-      properties = {
-      },
       type = "tilelayer",
       x = 0,
       y = 0,
+      width = 30,
+      height = 24,
       id = 5,
       name = "Decals A",
+      class = "",
       visible = true,
       opacity = 1,
       offsetx = 0,
       offsety = 0,
       parallaxx = 1,
       parallaxy = 1,
+      properties = {},
       encoding = "lua",
       data = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -133,22 +131,21 @@ return {
       }
     },
     {
-      class = "",
-      width = 30,
-      height = 24,
-      properties = {
-      },
       type = "tilelayer",
       x = 0,
       y = 0,
+      width = 30,
+      height = 24,
       id = 6,
       name = "Decals B",
+      class = "",
       visible = true,
       opacity = 1,
       offsetx = 0,
       offsety = 0,
       parallaxx = 1,
       parallaxy = 1,
+      properties = {},
       encoding = "lua",
       data = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -178,22 +175,21 @@ return {
       }
     },
     {
-      class = "",
-      width = 30,
-      height = 24,
-      properties = {
-      },
       type = "tilelayer",
       x = 0,
       y = 0,
+      width = 30,
+      height = 24,
       id = 7,
       name = "Decals C",
+      class = "",
       visible = true,
       opacity = 1,
       offsetx = 0,
       offsety = 0,
       parallaxx = 1,
       parallaxy = 1,
+      properties = {},
       encoding = "lua",
       data = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -223,22 +219,21 @@ return {
       }
     },
     {
-      class = "",
-      width = 30,
-      height = 24,
-      properties = {
-      },
       type = "tilelayer",
       x = 0,
       y = 0,
+      width = 30,
+      height = 24,
       id = 8,
       name = "Props",
+      class = "",
       visible = true,
       opacity = 1,
       offsetx = 0,
       offsety = 0,
       parallaxx = 1,
       parallaxy = 1,
+      properties = {},
       encoding = "lua",
       data = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -247,19 +242,19 @@ return {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 262, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 262, 0, 0, 197, 0, 197, 0, 262, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 0, 0, 0, 0, 197, 0, 0,
-        0, 0, 260, 261, 283, 284, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 194, 0, 174, 0, 0, 0,
+        0, 0, 260, 261, 283, 284, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 151, 152, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 171, 0, 174, 175, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 0, 0, 0, 0, 0, 0, 197, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 218, 218, 218, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 171, 174, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 262, 0, 0,
+        0, 0, 0, 151, 152, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 170, 171, 174, 175, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 262, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 262, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 262, 0, 0,
-        0, 0, 194, 0, 0, 174, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 0, 0, 0, 0, 0, 0, 197, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 260, 0, 0, 0, 194, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 194, 174, 0, 0, 0, 0, 0, 0,
-        0, 0, 174, 194, 283, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 174, 0, 0, 194, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 151, 152, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 262, 0, 0,
+        0, 0, 194, 0, 0, 174, 175, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 217, 0, 0, 0, 0, 0, 0, 0, 0, 197, 0, 0, 0, 0, 0, 0, 197, 0, 0, 0, 0, 151, 152, 0, 0, 0, 0, 0,
+        0, 260, 151, 152, 0, 194, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 151, 152, 171, 174, 175, 0, 0, 0, 0, 0,
+        0, 0, 174, 175, 283, 217, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 174, 175, 0, 171, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 197, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 261, 0, 0, 284, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -268,22 +263,21 @@ return {
       }
     },
     {
-      class = "",
-      width = 30,
-      height = 24,
-      properties = {
-      },
       type = "tilelayer",
       x = 0,
       y = 0,
+      width = 30,
+      height = 24,
       id = 10,
       name = "Walls Layer",
+      class = "",
       visible = true,
       opacity = 1,
       offsetx = 0,
       offsety = 0,
       parallaxx = 1,
       parallaxy = 1,
+      properties = {},
       encoding = "lua",
       data = {
         48, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 56,
@@ -313,22 +307,21 @@ return {
       }
     },
     {
-      class = "",
-      width = 30,
-      height = 24,
-      properties = {
-      },
       type = "tilelayer",
       x = 0,
       y = 0,
+      width = 30,
+      height = 24,
       id = 2,
       name = "Fountain Layer",
+      class = "",
       visible = true,
       opacity = 1,
       offsetx = 0,
       offsety = 0,
       parallaxx = 1,
       parallaxy = 1,
+      properties = {},
       encoding = "lua",
       data = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -358,572 +351,546 @@ return {
       }
     },
     {
-      class = "",
-      properties = {
-      },
       type = "objectgroup",
+      draworder = "topdown",
       id = 3,
       name = "Circle Colliders",
+      class = "",
       visible = true,
       opacity = 1,
       offsetx = 0,
       offsety = 0,
       parallaxx = 1,
       parallaxy = 1,
-      draworder = "topdown",
+      properties = {},
       objects = {
         {
-          width = 64,
-          height = 48,
-          properties = {
-          },
-          type = "",
-          x = 208,
-          y = 176,
           id = 1,
           name = "fountain",
-          visible = true,
+          type = "",
           shape = "ellipse",
-          rotation = 0
+          x = 208,
+          y = 176,
+          width = 64,
+          height = 48,
+          rotation = 0,
+          visible = true,
+          properties = {}
         }
       }
     },
     {
-      class = "",
-      properties = {
-      },
       type = "objectgroup",
+      draworder = "topdown",
       id = 4,
       name = "Rectangle Colliders",
+      class = "",
       visible = true,
       opacity = 1,
       offsetx = 0,
       offsety = 0,
       parallaxx = 1,
       parallaxy = 1,
-      draworder = "topdown",
+      properties = {},
       objects = {
         {
-          width = 60,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 34,
-          y = 99,
           id = 2,
           name = "market_burned_stall",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
+          x = 34,
+          y = 99,
+          width = 60,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
         },
         {
-          width = 28,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 34,
-          y = 195,
           id = 3,
           name = "market_abandoned_load",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
           type = "",
+          shape = "rectangle",
           x = 34,
-          y = 243,
-          id = 4,
-          name = "market_ash_crate_n",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 82,
-          y = 243,
-          id = 5,
-          name = "market_ash_barrel_n",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 18,
-          y = 275,
-          id = 6,
-          name = "market_ash_ruin_w",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 82,
-          y = 275,
-          id = 7,
-          name = "market_ash_crate_e",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 44,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 34,
-          y = 291,
-          id = 8,
-          name = "market_ash_heap_s",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 338,
-          y = 67,
-          id = 9,
-          name = "watch_gate_post_w",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 450,
-          y = 67,
-          id = 10,
-          name = "watch_gate_post_e",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 402,
-          y = 51,
-          id = 11,
-          name = "watch_pyre_post",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 386,
-          y = 67,
-          id = 12,
-          name = "watch_pyre_torch_w",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 418,
-          y = 67,
-          id = 13,
-          name = "watch_pyre_torch_e",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 386,
-          y = 115,
-          id = 14,
-          name = "watch_pyre_crate_w",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 418,
-          y = 115,
-          id = 15,
-          name = "watch_pyre_crate_e",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 44,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 370,
-          y = 147,
-          id = 16,
-          name = "watch_barricade_n",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
-          width = 12,
-          height = 43,
-          properties = {
-          },
-          type = "",
-          x = 434,
           y = 195,
-          id = 17,
-          name = "watch_barricade_e",
-          visible = true,
-          shape = "rectangle",
-          rotation = 0
-        },
-        {
           width = 28,
           height = 11,
-          properties = {
-          },
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 4,
+          name = "market_ash_crate_n",
           type = "",
-          x = 354,
+          shape = "rectangle",
+          x = 34,
+          y = 243,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 5,
+          name = "market_ash_barrel_n",
+          type = "",
+          shape = "rectangle",
+          x = 82,
+          y = 243,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 6,
+          name = "market_ash_ruin_w",
+          type = "",
+          shape = "rectangle",
+          x = 18,
           y = 275,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 7,
+          name = "market_ash_crate_e",
+          type = "",
+          shape = "rectangle",
+          x = 82,
+          y = 275,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 8,
+          name = "market_ash_heap_s",
+          type = "",
+          shape = "rectangle",
+          x = 34,
+          y = 291,
+          width = 44,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 9,
+          name = "watch_gate_post_w",
+          type = "",
+          shape = "rectangle",
+          x = 338,
+          y = 67,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 10,
+          name = "watch_gate_post_e",
+          type = "",
+          shape = "rectangle",
+          x = 450,
+          y = 67,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 11,
+          name = "watch_pyre_post",
+          type = "",
+          shape = "rectangle",
+          x = 402,
+          y = 51,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 12,
+          name = "watch_pyre_torch_w",
+          type = "",
+          shape = "rectangle",
+          x = 386,
+          y = 67,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 13,
+          name = "watch_pyre_torch_e",
+          type = "",
+          shape = "rectangle",
+          x = 418,
+          y = 67,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 14,
+          name = "watch_pyre_crate_w",
+          type = "",
+          shape = "rectangle",
+          x = 386,
+          y = 115,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 15,
+          name = "watch_pyre_crate_e",
+          type = "",
+          shape = "rectangle",
+          x = 418,
+          y = 115,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 16,
+          name = "watch_barricade_n",
+          type = "",
+          shape = "rectangle",
+          x = 370,
+          y = 147,
+          width = 44,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
+          id = 17,
+          name = "watch_barricade_e",
+          type = "",
+          shape = "rectangle",
+          x = 434,
+          y = 195,
+          width = 12,
+          height = 43,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
           id = 18,
           name = "watch_supply",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
+          x = 354,
+          y = 275,
+          width = 28,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
         },
         {
-          width = 12,
-          height = 11,
-          properties = {
-          },
-          type = "",
-          x = 322,
-          y = 291,
           id = 19,
           name = "drain_barrel_w",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 322,
+          y = 291,
           width = 12,
           height = 11,
-          properties = {
-          },
-          type = "",
-          x = 370,
-          y = 291,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
           id = 20,
           name = "drain_crate_e",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 370,
+          y = 291,
           width = 12,
           height = 11,
-          properties = {
-          },
-          type = "",
-          x = 322,
-          y = 323,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
           id = 21,
           name = "drain_ruin_sw",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 322,
+          y = 323,
           width = 12,
           height = 11,
-          properties = {
-          },
-          type = "",
-          x = 370,
-          y = 323,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
           id = 22,
           name = "drain_ruin_se",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
+          x = 370,
+          y = 323,
+          width = 12,
+          height = 11,
+          rotation = 0,
+          visible = true,
+          properties = {}
         }
       }
     },
     {
-      class = "",
-      properties = {
-      },
       type = "objectgroup",
+      draworder = "topdown",
       id = 9,
       name = "Spawns",
+      class = "",
       visible = true,
       opacity = 1,
       offsetx = 0,
       offsety = 0,
       parallaxx = 1,
       parallaxy = 1,
-      draworder = "topdown",
+      properties = {},
       objects = {
         {
-          width = 32,
-          height = 32,
-          properties = {
-            cleanseRadius = 36,
-            district = "Ash Market",
-            nest = "a"
-          },
-          type = "",
-          x = 48,
-          y = 256,
           id = 23,
           name = "nest_a",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 48,
+          y = 256,
           width = 32,
           height = 32,
+          rotation = 0,
+          visible = true,
           properties = {
-            cleanseRadius = 36,
-            district = "Ossuary",
-            nest = "b"
-          },
-          type = "",
-          x = 336,
-          y = 288,
+            ["cleanseRadius"] = 36,
+            ["district"] = "Ash Market",
+            ["nest"] = "a"
+          }
+        },
+        {
           id = 24,
           name = "nest_b",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 336,
+          y = 288,
           width = 32,
           height = 32,
+          rotation = 0,
+          visible = true,
           properties = {
-            cleanseRadius = 40,
-            district = "Watch Yard",
-            nest = "c"
-          },
-          type = "",
-          x = 400,
-          y = 80,
+            ["cleanseRadius"] = 36,
+            ["district"] = "Ossuary",
+            ["nest"] = "b"
+          }
+        },
+        {
           id = 25,
           name = "nest_c",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 400,
+          y = 80,
           width = 32,
           height = 32,
+          rotation = 0,
+          visible = true,
           properties = {
-            cleanseRadius = 40,
-            district = "Plague Well",
-            lockedUntilDistricts = true,
-            nest = "well"
-          },
-          type = "",
-          x = 224,
-          y = 176,
+            ["cleanseRadius"] = 40,
+            ["district"] = "Watch Yard",
+            ["nest"] = "c"
+          }
+        },
+        {
           id = 26,
           name = "nest_well",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
+          x = 224,
+          y = 176,
+          width = 32,
+          height = 32,
+          rotation = 0,
+          visible = true,
+          properties = {
+            ["cleanseRadius"] = 40,
+            ["district"] = "Plague Well",
+            ["lockedUntilDistricts"] = true,
+            ["nest"] = "well"
+          }
         },
         {
-          width = 16,
-          height = 16,
-          properties = {
-          },
-          type = "",
-          x = 224,
-          y = 320,
           id = 27,
           name = "player_start",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 224,
+          y = 320,
           width = 16,
           height = 16,
-          properties = {
-            type = "chaser",
-            nest = "a"
-          },
-          type = "",
-          x = 48,
-          y = 208,
+          rotation = 0,
+          visible = true,
+          properties = {}
+        },
+        {
           id = 28,
           name = "spawn_chaser_a",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 48,
+          y = 208,
           width = 16,
           height = 16,
+          rotation = 0,
+          visible = true,
           properties = {
-            type = "fleer",
-            nest = "a"
-          },
-          type = "",
-          x = 112,
-          y = 304,
+            ["nest"] = "a",
+            ["type"] = "chaser"
+          }
+        },
+        {
           id = 29,
           name = "spawn_fleer_a",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 112,
+          y = 304,
           width = 16,
           height = 16,
+          rotation = 0,
+          visible = true,
           properties = {
-            type = "keeper",
-            nest = "a"
-          },
-          type = "",
-          x = 80,
-          y = 240,
+            ["nest"] = "a",
+            ["type"] = "fleer"
+          }
+        },
+        {
           id = 30,
           name = "spawn_keeper_a",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 80,
+          y = 240,
           width = 16,
           height = 16,
+          rotation = 0,
+          visible = true,
           properties = {
-            type = "keeper",
-            nest = "b"
-          },
-          type = "",
-          x = 288,
-          y = 256,
+            ["nest"] = "a",
+            ["type"] = "keeper"
+          }
+        },
+        {
           id = 31,
           name = "spawn_keeper_b",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 288,
+          y = 256,
           width = 16,
           height = 16,
+          rotation = 0,
+          visible = true,
           properties = {
-            type = "chaser",
-            nest = "b"
-          },
-          type = "",
-          x = 384,
-          y = 304,
+            ["nest"] = "b",
+            ["type"] = "keeper"
+          }
+        },
+        {
           id = 32,
           name = "spawn_chaser_b",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 384,
+          y = 304,
           width = 16,
           height = 16,
+          rotation = 0,
+          visible = true,
           properties = {
-            type = "fleer",
-            nest = "b"
-          },
-          type = "",
-          x = 320,
-          y = 320,
+            ["nest"] = "b",
+            ["type"] = "chaser"
+          }
+        },
+        {
           id = 33,
           name = "spawn_fleer_b",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 320,
+          y = 320,
           width = 16,
           height = 16,
+          rotation = 0,
+          visible = true,
           properties = {
-            type = "ranger",
-            nest = "c"
-          },
-          type = "",
-          x = 352,
-          y = 96,
+            ["nest"] = "b",
+            ["type"] = "fleer"
+          }
+        },
+        {
           id = 34,
           name = "spawn_ranger_c",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
-        },
-        {
+          x = 352,
+          y = 96,
           width = 16,
           height = 16,
+          rotation = 0,
+          visible = true,
           properties = {
-            type = "chaser",
-            nest = "c"
-          },
-          type = "",
-          x = 416,
-          y = 128,
+            ["nest"] = "c",
+            ["type"] = "ranger"
+          }
+        },
+        {
           id = 35,
           name = "spawn_chaser_c",
-          visible = true,
+          type = "",
           shape = "rectangle",
-          rotation = 0
+          x = 416,
+          y = 128,
+          width = 16,
+          height = 16,
+          rotation = 0,
+          visible = true,
+          properties = {
+            ["nest"] = "c",
+            ["type"] = "chaser"
+          }
         }
       }
     }

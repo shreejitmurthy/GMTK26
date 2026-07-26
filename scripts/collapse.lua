@@ -15,8 +15,8 @@ local MAP_W, MAP_H, TILE = 30, 24, 16
 local CRACK_SECONDS = 1.0
 local FALL_SECONDS = 0.55
 local MAX_FALLEN_RATIO = 0.48
-local FIRST_WAVE_TIME = 20
-local FIRST_WAVE_RATIO = 0.85
+local FIRST_WAVE_TIME = 15
+local FIRST_WAVE_RATIO = 0.82
 --- Fountain stamp footprint (0-based), matches map_patch_nests.
 local FOUNTAIN = { c0 = 13, c1 = 16, r0 = 10, r1 = 13 }
 
@@ -537,7 +537,11 @@ function collapse.update(dt, state)
     local ratio = state.countdown and state.countdown:getRatio() or 1
 
     if not started then
-        if elapsed >= FIRST_WAVE_TIME or ratio < FIRST_WAVE_RATIO then
+        local plagueDisturbed = uncleansedCount(state.nests) < 4
+        if plagueDisturbed
+            or elapsed >= FIRST_WAVE_TIME
+            or ratio < FIRST_WAVE_RATIO
+        then
             started = true
             waveCooldown = 0
             runWave(state, ratio)

@@ -16,6 +16,8 @@ sound_effects.VOLUME = {
     impact = 0.65,
     largeDeathImpact = 0.8,
     dashVoice = 1.0,
+    potionDrink = 0.7,
+    crateBreak = 0.65,
     squelch = 0.3,
     nearDeathVoice = 1.0,
     backgroundMusic = 0.15,
@@ -34,10 +36,16 @@ local SQUELCH_PATHS = {
     "res/sounds/squelching_4.wav",
 }
 
+local POTION_DRINK_PATHS = {
+    "res/sounds/yodguard-potion-drink-3-540167.mp3",
+    "res/sounds/yodguard-potion-drink-4-540186.mp3",
+}
+
 local sources
 local loaded = false
 local lastHitIndex
 local lastDashIndex
+local lastPotionDrinkIndex
 local footstepTimer = 0
 local nearDeathActive = false
 local nearDeathSubtitleTime = 0
@@ -119,6 +127,10 @@ local function forEachSource(callback)
     for _, source in ipairs(sources.dashes or {}) do
         callback(source)
     end
+    for _, source in ipairs(sources.potionDrinks or {}) do
+        callback(source)
+    end
+    callback(sources.crateBreak)
     for _, source in ipairs(sources.squelches or {}) do
         callback(source)
     end
@@ -216,6 +228,14 @@ function sound_effects.load()
             dashOnePath,
             "res/sounds/dash_2.wav",
         }, sound_effects.VOLUME.dashVoice),
+        potionDrinks = newSourceList(
+            POTION_DRINK_PATHS,
+            sound_effects.VOLUME.potionDrink
+        ),
+        crateBreak = newSource(
+            "res/sounds/freesound_community-crate-break-1-93926.mp3",
+            sound_effects.VOLUME.crateBreak
+        ),
         squelches = newSourceList(
             SQUELCH_PATHS,
             sound_effects.VOLUME.squelch
@@ -261,6 +281,8 @@ function sound_effects.stopAll()
     stopSourceList(sources.impacts)
     stopSource(sources.largeDeathImpact)
     stopSourceList(sources.dashes)
+    stopSourceList(sources.potionDrinks)
+    stopSource(sources.crateBreak)
     stopSourceList(sources.squelches)
     stopSource(sources.nearDeath)
     -- Background music intentionally continues through run resets.
@@ -271,6 +293,7 @@ function sound_effects.reset()
     sound_effects.stopAll()
     lastHitIndex = nil
     lastDashIndex = nil
+    lastPotionDrinkIndex = nil
     footstepTimer = 0
     nearDeathActive = false
     nearDeathSubtitleTime = 0
@@ -313,6 +336,26 @@ function sound_effects.playDash()
         return true
     end
     return false
+end
+
+--- Completed district potion pickups use alternating drink variants.
+function sound_effects.playPotionPickup()
+    ensureLoaded()
+    local index = randomIndexExcept(
+        #sources.potionDrinks,
+        lastPotionDrinkIndex
+    )
+    if index and playSource(sources.potionDrinks[index]) then
+        lastPotionDrinkIndex = index
+        return true
+    end
+    return false
+end
+
+--- Accepted sword hits against crates and barrels use the supplied break cue.
+function sound_effects.playCrateBreak()
+    ensureLoaded()
+    return playSource(sources.crateBreak)
 end
 
 function sound_effects.playEnemyHitImpact()

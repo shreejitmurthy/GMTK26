@@ -153,6 +153,7 @@ end
 -- Tunables: enemy hit drain (seconds) + invuln window after a hit.
 player.HIT_DAMAGE_SECONDS = 5
 player.HURT_IFRAME = 0.6
+player.SWORD_DAMAGE = 0.85
 PLAYER_HIT_DAMAGE_SECONDS = player.HIT_DAMAGE_SECONDS
 PLAYER_HURT_IFRAME = player.HURT_IFRAME
 
@@ -311,6 +312,7 @@ function player:new(x, y)
     p.swingSerial = 0
     p.hasSwung = false
     p.swingHitEnemies = {}
+    p.swingHitProps = {}
     p.enemyHitCount = 0
     p.enemyHitFlash = 0
     p.enemyHitFlashElapsed = 0
@@ -327,6 +329,7 @@ function player:new(x, y)
     p.dashSmearShader = dashSmearShader
     p.hitDamageSeconds = player.HIT_DAMAGE_SECONDS
     p.hurtIFrameDuration = player.HURT_IFRAME
+    p.swordDamage = player.SWORD_DAMAGE
     -- Set by gameplay (state:applyPlayerDamage) so combat drain stays centralized.
     p.applyDamage = nil
     p.attackPose = {
@@ -527,6 +530,7 @@ function player:startSwing(targetX, targetY)
         self.swingArcEnd = RIGHT_BOTTOM_SWING_LIMIT
     end
     self.swingHitEnemies = {}
+    self.swingHitProps = {}
 
     self:updateSwordPose(0)
     self:enableAttackHitbox()
@@ -691,7 +695,13 @@ local function swordOverlapsHurtbox(sx, sy, angle, attackW, attackH, hx, hy, hur
     return false
 end
 
---- After physics.update: sword volume vs enemy hurtboxes → once per enemy per swing.
+local function isBreakableProp(object)
+    local name = string.lower(tostring(object and object.name or ""))
+    return name:find("crate", 1, true) ~= nil
+        or name:find("barrel", 1, true) ~= nil
+end
+
+--- After physics.update: sword volume vs enemies/props → once per target per swing.
 --- Tests live actors directly; kinematic EnemyHit sensors do not yield reliable enters.
 function player:pollAttackHits()
     if not self.attackHitbox then
@@ -707,7 +717,7 @@ function player:pollAttackHits()
         end
         self.swingHitEnemies[enemyObj] = true
         if enemyObj.onHitByPlayer then
-            enemyObj:onHitByPlayer(self.swingSerial)
+            enemyObj:onHitByPlayer(self.swingSerial, self.swordDamage)
         else
             local label = enemyObj.label or "?"
             local ex, ey = 0, 0
@@ -723,15 +733,15 @@ function player:pollAttackHits()
         end
     end
 
-    local actors = rawget(_G, "state") and state.actors
-    if not actors then
+    local gameState = rawget(_G, "state") and state
+    if not gameState then
         return
     end
 
     local x = self.attackPose.x
     local y = self.attackPose.y
     local angle = self.attackPose.angle or 0
-    for _, actor in ipairs(actors) do
+    for _, actor in ipairs(gameState.actors or {}) do
         if actor.label == "enemy"
             and actor.hurtbox
             and not actor.dead
@@ -750,6 +760,38 @@ function player:pollAttackHits()
                 actor.hurtH or 14
             ) then
                 applyHit(actor)
+            end
+        end
+    end
+
+    self.swingHitProps = self.swingHitProps or {}
+    local gameMap = gameState.gameMap
+    local colliderLayer = gameMap
+        and gameMap.layers
+        and gameMap.layers["Rectangle Colliders"]
+    for _, object in ipairs((colliderLayer and colliderLayer.objects) or {}) do
+        if isBreakableProp(object)
+            and not self.swingHitProps[object]
+            and (object.width or 0) > 0
+            and (object.height or 0) > 0
+        then
+            local width = object.width
+            local height = object.height
+            local hx = (object.x or 0) + width / 2
+            local hy = (object.y or 0) + height / 2
+            if swordOverlapsHurtbox(
+                x,
+                y,
+                angle,
+                self.attackW,
+                self.attackH,
+                hx,
+                hy,
+                width,
+                height
+            ) then
+                self.swingHitProps[object] = true
+                sound_effects.playCrateBreak()
             end
         end
     end

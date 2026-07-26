@@ -7,17 +7,19 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 - Grey room + camera follow
 - Windfield world (`scripts/physics.lua`): **zero gravity**, collision classes, stub arena walls
 - Player (`scripts/player.lua`): WASD + arrows, **normalized** diagonal velocity, collider-owned movement, Shift dash with yellow flash/white smears, and directional run/held-idle/attack animations from `plagueDoctorSheetAttack.png`
-- Sword (`scripts/sword.lua`): separate actor using frame one of the 16×16 sword atlas; a continuous outward turnover finishes in mirrored 15° resting tilts without crossing the player
+- Sword (`scripts/sword.lua`): separate actor using frame one of the 16×16 sword atlas; each confirmed swing deals **0.85 damage**, and a continuous outward turnover finishes in mirrored 15° resting tilts without crossing the player
 - Slash trail (`scripts/slash_trail.lua`): procedural fading ribbon generated from the sword's hilt/tip pose and split across behind/front player layers
 - Enemies: soft barriers + `EnemyHit` sensor hurtboxes; resistance increases near their body and contact permits only a tiny, momentum-free nudge
 - Enemies can **move** via shared locomotion (`moveToward` / `moveAway` / `stop`); after intentional AI motion each frame, `pushAnchorX/Y` is refreshed to the collider so soft contact still works and AI is not yanked back to spawn
 - **Kinematic wall policy:** Enemy bodies are kinematic (Box2D does not resolve Enemy vs Wall). Motion uses `slideEnemyAgainstWalls` / `constrainEnemyMotion`; soft-push uses `trySetEnemyPosition` (never teleports into walls). `clampEnemyToPlayable` + per-frame `clampAllEnemiesToPlayable` keep every enemy inside the stub arena interior and clear of Wall colliders (unstick prefers arena center — never ejects OOB).
 - Four enemy types (`scripts/enemy_types.lua`): **chaser**, **fleer**, **keeper**, **ranger** — polished locomotion; ranger cornered melee drains the plague timer
 - **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**) with a thin **Plague Tolerance** fuse. Enemy hits → `state:applyPlayerDamage` → `countdown:damage` (**5s** default, **0.6s** i-frames). **H** debug-damages **3s** (bypasses i-frames). Player sword hits do **not** drain your timer. At 0 → **EXTRACTED**
-- **Period HUD type:** `res/fonts/Italianno-Regular.ttf` (OFL) — copperplate / roundhand cursive for timer, labels, extract, help text
+- **Period display type:** `res/fonts/Italianno-Regular.ttf` (OFL) — copperplate / roundhand cursive for titles, timer, and HUD labels
+- **Body type:** `res/fonts/CinzelDecorative-Bold.ttf` — decorative serif for narrative copy, instructions, prompts, subtitles, and end-screen details
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
 - **STI map:** `res/maps/map.lua` — one Victorian decaying courtyard; districts by props (Ash Market / Ossuary / Watch Yard) + fountain Plague Well
-- **Nest cleanse loop** (`scripts/nests.lua`): **3+1** — seal 3 district nests (Hold E, 2s, serum cost 2s once), then unlock the fountain **Plague Well**; well cleanse → **SECTOR CLEANSED**. Kill infected → `+1s`; timer 0 → **EXTRACTED**. Never win at district 3/3 alone.
+- **Nest cleanse loop** (`scripts/nests.lua`): **3+1** — seal 3 district nests (Hold E, 2s; escalating serum costs of **2s / 3s / 4s**), then unlock the fountain **Plague Well** (**6s** exposure); well cleanse → **SECTOR CLEANSED**. Kills restore a small amount of time; timer 0 → **EXTRACTED**. Never win at district 3/3 alone.
+- **Escalating encounters** (`scripts/encounter_director.lua`): the active cap stays at **8**, but each collected potion shifts spawns toward keepers/rangers and gives new arrivals modest speed and attack-cadence bonuses. Late objectives create harder compositions rather than a raw swarm.
 - **Courtyard collapse** (`scripts/collapse.lua`): tiles crack (1s telegraph) then fall into black abyss; standing on a fallen cell → **EXTRACTED**. Fountain + nest centers never fall.
 
 Physics loop: input → normalize → `setLinearVelocity` → swing pose + sync sensors → `world:update(dt)` → hit enter poll → sync draw/camera from collider.
@@ -155,13 +157,13 @@ As plague tolerance fails, floor tiles literally fall away — unique pressure v
 | Death | Player center on a **fallen** cell → **EXTRACTED** (abyss). Not a soft shove. |
 | Protected | Fountain stamp (cols 13–16, rows 10–13) + nest pads (±1–2) never collapse |
 | Fairness | Never starts cracking under the player (Chebyshev ≥ 2). Nest approach corridors + no-isolation BFS until late. Cap ~48% fallen. |
-| Escalation | First wave at **t=20s** or ratio &lt; 0.85 (whichever first). Wave size/interval scale with `(1 - ratio)` + uncleansed nests. |
+| Escalation | First wave after the **first potion**, at **t=15s**, or ratio &lt; 0.82 (whichever first). Wave size/interval scale with `(1 - ratio)` + uncleansed nests. |
 | Debug | **V** forces one crack near the player (not underfoot) |
 
 ### Plague timer (health)
 
 - Module: `scripts/countdown.lua`, owned by gameplay as `state.countdown`.
-- **Default duration: 120 seconds** (2 minutes).
+- **Default duration: 90 seconds**.
 - Display: large **top-center** clock (`M:SS`, tenths under 10s) in Italianno cursive + thin segmented **Plague Tolerance** fuse (width = `getRatio()`, same color family — not a heart HP bar).
 - Feedback: `:damage()` sets `damagePulse` (~0.4s) — digit/fuse flash + floating `-Xs`. Ratio < 0.15 → subtle screen-edge tint.
 - Urgency: warmer tint below 25% remaining; subtle pulse below 10%. During

@@ -3,6 +3,7 @@
 
 local physics = require "scripts.physics"
 local enemy_attacks = require "scripts.enemy_attacks"
+local ui_font = require "scripts.ui_font"
 require "scripts.enemy"
 
 local enemy_test = {}
@@ -48,18 +49,17 @@ function enemy_test.drawHud(stateRef)
     if not enemy_test.isActive(stateRef) then
         return
     end
-    local helpFont = stateRef.hudHelpFont
-    local labelFont = stateRef.hudLabelFont
-    if labelFont then
-        love.graphics.setFont(labelFont)
-    end
+    local labelFont = stateRef.hudLabelFont or love.graphics.getFont()
+    local helpFont = stateRef.hudHelpFont or labelFont
     love.graphics.setColor(0.95, 0.85, 0.55, 0.95)
-    love.graphics.print("ENEMY TEST", 12, 10)
-    if helpFont then
-        love.graphics.setFont(helpFont)
-    end
+    ui_font.print(labelFont, "ENEMY TEST", 12, 10)
     love.graphics.setColor(0.85, 0.85, 0.8, 0.85)
-    love.graphics.print("R reset · Esc quit · Space/LMB swing · countdown paused", 12, 34)
+    ui_font.print(
+        helpFont,
+        "R reset · Esc quit · Space/LMB swing · countdown paused",
+        12,
+        34
+    )
 
     local y = 56
     for _, actor in ipairs(stateRef.actors or {}) do
@@ -71,9 +71,10 @@ function enemy_test.drawHud(stateRef)
             love.graphics.setColor(0.15, 0.12, 0.1, 0.72)
             love.graphics.rectangle("fill", 10, y - 2, 220, 18)
             love.graphics.setColor(0.95, 0.9, 0.82, 0.95)
-            love.graphics.print(
+            ui_font.print(
+                helpFont,
                 string.format(
-                    "%s  HP %d/%d  %s  hit -%ds",
+                    "%s  HP %.1f/%.0f  %s  hit -%ds",
                     string.upper(actor.enemyType or "?"),
                     hp,
                     maxHp,
@@ -86,7 +87,8 @@ function enemy_test.drawHud(stateRef)
             y = y + 20
         elseif actor.label == "enemy" and actor.dead then
             love.graphics.setColor(0.5, 0.45, 0.4, 0.7)
-            love.graphics.print(
+            ui_font.print(
+                helpFont,
                 string.format("%s  DEAD", string.upper(actor.enemyType or "?")),
                 14,
                 y
@@ -97,7 +99,8 @@ function enemy_test.drawHud(stateRef)
 
     local counts = enemy_test.countByType(stateRef.actors)
     love.graphics.setColor(0.7, 0.75, 0.7, 0.8)
-    love.graphics.print(
+    ui_font.print(
+        helpFont,
         string.format(
             "alive C%d F%d K%d R%d · shots %d",
             counts.chaser,

@@ -46,18 +46,24 @@ local TUNING = {
     PLAYER_RING_MAX = 200,
     PLAYER_RING_ATTEMPTS = 22,
     HUNT_WAVE_BURSTS = 2,
-    WELL_FINALE_BURSTS = 3,
+    WELL_FINALE_BURSTS = 4,
+    --- Newly spawned enemies harden after each collected district potion.
+    STAGE_SPEED_BONUS = 0.04,
+    STAGE_TELEGRAPH_REDUCTION = 0.04,
+    STAGE_RECOVERY_REDUCTION = 0.06,
+    STAGE_POST_GAP_REDUCTION = 0.08,
+    STAGE_PROJECTILE_SPEED_BONUS = 0.05,
     COMPOSITION = {
-        { type = "chaser", weight = 0.45 },
-        { type = "fleer", weight = 0.25 },
-        { type = "keeper", weight = 0.20 },
-        { type = "ranger", weight = 0.10 },
+        { type = "chaser", weight = 0.45, lateWeight = 0.34 },
+        { type = "fleer", weight = 0.25, lateWeight = 0.12 },
+        { type = "keeper", weight = 0.20, lateWeight = 0.28 },
+        { type = "ranger", weight = 0.10, lateWeight = 0.26 },
     },
     TIME_REWARDS = {
-        chaser = 1.5,
-        fleer = 3.0,
-        keeper = 2.0,
-        ranger = 2.5,
+        chaser = 1.0,
+        fleer = 1.5,
+        keeper = 1.5,
+        ranger = 1.5,
     },
 }
 
@@ -74,7 +80,18 @@ local function dist(ax, ay, bx, by)
 end
 
 function encounter_director.timeRewardFor(enemyType)
-    return TUNING.TIME_REWARDS[enemyType] or 1.5
+    return TUNING.TIME_REWARDS[enemyType] or 1.0
+end
+
+--- Difficulty rises with objective progress, not only with enemy population.
+local function difficultyStage(state)
+    if not state then
+        return 0
+    end
+    return math.min(
+        3,
+        nestsMod.countDistrictCleansed(state.nests)
+    )
 end
 
 local function nestUncleansed(state, nestId)
@@ -209,10 +226,17 @@ end
 local function pickCompositionType(state)
     local options = {}
     local sum = 0
+    local stageT = difficultyStage(state) / 3
     for _, entry in ipairs(TUNING.COMPOSITION) do
         if not typeAtCap(state, entry.type) then
-            options[#options + 1] = entry
-            sum = sum + entry.weight
+            local lateWeight = entry.lateWeight or entry.weight
+            local weight = entry.weight
+                + (lateWeight - entry.weight) * stageT
+            options[#options + 1] = {
+                type = entry.type,
+                weight = weight,
+            }
+            sum = sum + weight
         end
     end
     if #options == 0 or sum <= 0 then
@@ -376,13 +400,15 @@ end
 local function pressureIntervalFor(state, isWell)
     local base = isWell and TUNING.WELL_PRESSURE_INTERVAL or TUNING.PRESSURE_INTERVAL
     local sites = uncleansedCount(state)
+    local stage = difficultyStage(state)
     local ratio = 1
     if state.countdown and state.countdown.getRatio then
         ratio = state.countdown:getRatio()
     end
-    -- Mild urgency only — keep a fair cadence, not a spawn flood.
+    -- Objective progress matters more than raw population: later sites stay hot.
     local urgency = math.min(1, (sites / 4) * 0.4 + (1 - ratio) * 0.35)
-    return base * (1 - 0.28 * urgency)
+    local interval = base * (1 - 0.22 * urgency - 0.08 * stage)
+    return math.max(isWell and 3.8 or 6.0, interval)
 end
 
 local function dropPackAggro(state, nestId)
@@ -452,17 +478,32 @@ local function completeSpawn(entry, state)
     end
 
     local e = enemy:new(entry.x, entry.y, { type = entry.enemyType })
+    local stage = difficultyStage(state)
+    if stage > 0 then
+        e.speed = e.speed * (1 + TUNING.STAGE_SPEED_BONUS * stage)
+        e.attackTelegraph = e.attackTelegraph
+            * (1 - TUNING.STAGE_TELEGRAPH_REDUCTION * stage)
+        e.attackRecovery = e.attackRecovery
+            * (1 - TUNING.STAGE_RECOVERY_REDUCTION * stage)
+        e.attackPostGap = e.attackPostGap
+            * (1 - TUNING.STAGE_POST_GAP_REDUCTION * stage)
+        if e.projectileSpeed then
+            e.projectileSpeed = e.projectileSpeed
+                * (1 + TUNING.STAGE_PROJECTILE_SPEED_BONUS * stage)
+        end
+    end
     e.nest = entry.nestId
     e.killRewardSeconds = encounter_director.timeRewardFor(entry.enemyType)
     state.actors[#state.actors + 1] = e
     print(string.format(
-        "[encounter] spawn %s nest_%s @ %.0f,%.0f (active %d/%d)",
+        "[encounter] spawn %s nest_%s @ %.0f,%.0f (active %d/%d, stage %d)",
         entry.enemyType,
         entry.nestId,
         entry.x,
         entry.y,
         living + 1,
-        TUNING.MAX_ACTIVE
+        TUNING.MAX_ACTIVE,
+        stage
     ))
 end
 

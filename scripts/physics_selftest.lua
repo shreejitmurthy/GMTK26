@@ -4,6 +4,7 @@ local physics = require "scripts.physics"
 local countdown = require "scripts.countdown"
 local collapse = require "scripts.collapse"
 local game_map = require "scripts.game_map"
+local sound_effects = require "scripts.sound_effects"
 require "scripts.enemy" -- global `enemy` module (no return value)
 require "scripts.player"
 
@@ -513,20 +514,69 @@ function selftest.run(playerActor, enemyActors)
     allOk = check("countdown addTime clamps to duration",
         nearlyEqual(cd2:getRemaining(), 10),
         string.format("got %.2f", cd2:getRemaining())) and allOk
-    allOk = check("player hit damage / iframe tunables",
+    local defaultCd = countdown.new()
+    allOk = check("default run duration is 90 seconds",
+        nearlyEqual(defaultCd:getDuration(), 90),
+        string.format("got %.2f", defaultCd:getDuration())) and allOk
+    allOk = check("player damage / iframe tunables",
         nearlyEqual(player.HIT_DAMAGE_SECONDS, 5)
-            and nearlyEqual(player.HURT_IFRAME, 0.6),
-        string.format("dmg=%.1f iframe=%.1f",
-            player.HIT_DAMAGE_SECONDS, player.HURT_IFRAME)) and allOk
+            and nearlyEqual(player.HURT_IFRAME, 0.6)
+            and nearlyEqual(player.SWORD_DAMAGE, 0.85),
+        string.format(
+            "incoming=%.1f iframe=%.1f sword=%.2f",
+            player.HIT_DAMAGE_SECONDS,
+            player.HURT_IFRAME,
+            player.SWORD_DAMAGE
+        )) and allOk
 
     local nestsMod = require "scripts.nests"
     allOk = check("nest cleanse constants",
         nearlyEqual(nestsMod.CLEANSE_SECONDS, 2)
             and nearlyEqual(nestsMod.CLEANSE_START_COST_SECONDS, 2)
+            and nearlyEqual(nestsMod.CLEANSE_COST_PER_POTION, 1)
+            and nearlyEqual(nestsMod.WELL_CLEANSE_START_COST_SECONDS, 6)
             and nestsMod.CLEANSE_HOLD_KEY == "e",
-        string.format("cleanse=%.1f cost=%.1f key=%s",
+        string.format("cleanse=%.1f costs=%.1f/+%.1f/well%.1f key=%s",
             nestsMod.CLEANSE_SECONDS, nestsMod.CLEANSE_START_COST_SECONDS,
+            nestsMod.CLEANSE_COST_PER_POTION,
+            nestsMod.WELL_CLEANSE_START_COST_SECONDS,
             tostring(nestsMod.CLEANSE_HOLD_KEY))) and allOk
+    local exposureFixtures = {
+        { id = "a", cleansed = false },
+        { id = "b", cleansed = false },
+        { id = "c", cleansed = false },
+        { id = "well", cleansed = false, isWell = true },
+    }
+    local firstCost = nestsMod.exposureCost(
+        exposureFixtures,
+        exposureFixtures[1]
+    )
+    exposureFixtures[1].cleansed = true
+    local secondCost = nestsMod.exposureCost(
+        exposureFixtures,
+        exposureFixtures[2]
+    )
+    exposureFixtures[2].cleansed = true
+    local thirdCost = nestsMod.exposureCost(
+        exposureFixtures,
+        exposureFixtures[3]
+    )
+    local wellCost = nestsMod.exposureCost(
+        exposureFixtures,
+        exposureFixtures[4]
+    )
+    allOk = check("objective exposure escalates 2/3/4 then 6",
+        firstCost == 2
+            and secondCost == 3
+            and thirdCost == 4
+            and wellCost == 6,
+        string.format(
+            "got %.0f/%.0f/%.0f then %.0f",
+            firstCost,
+            secondCost,
+            thirdCost,
+            wellCost
+        )) and allOk
     if state and state.nests then
         allOk = check("nests loaded from map (3 districts + well)",
             #state.nests == 4
@@ -677,6 +727,79 @@ function selftest.run(playerActor, enemyActors)
             playerForAbyss.pos.y = savedY
         end
     end
+
+    -- Map props use the same sword volume as enemies, but trigger their own
+    -- cue only once while a swing overlaps them.
+    do
+        local colliderLayer = state.gameMap
+            and state.gameMap.layers
+            and state.gameMap.layers["Rectangle Colliders"]
+        local breakableObject
+        for _, object in ipairs((colliderLayer and colliderLayer.objects) or {}) do
+            local name = string.lower(tostring(object.name or ""))
+            if name:find("crate", 1, true)
+                or name:find("barrel", 1, true)
+            then
+                breakableObject = object
+                break
+            end
+        end
+
+        local propSoundOk = breakableObject ~= nil
+        local propSoundDetail = "no named crate/barrel collider"
+        if breakableObject then
+            local savedActors = state.actors
+            local savedAttackHitbox = playerActor.attackHitbox
+            local savedSwingHits = playerActor.swingHitProps
+            local savedPose = {
+                x = playerActor.attackPose.x,
+                y = playerActor.attackPose.y,
+                angle = playerActor.attackPose.angle,
+            }
+            local originalPlayCrateBreak = sound_effects.playCrateBreak
+            local playCount = 0
+            sound_effects.playCrateBreak = function()
+                playCount = playCount + 1
+                return true
+            end
+
+            state.actors = {}
+            playerActor.attackHitbox = { active = true }
+            playerActor.attackPose.x =
+                breakableObject.x + breakableObject.width / 2
+            playerActor.attackPose.y =
+                breakableObject.y + breakableObject.height / 2
+            playerActor.attackPose.angle = 0
+            playerActor.swingHitProps = {}
+            playerActor:pollAttackHits()
+            playerActor:pollAttackHits()
+            local firstSwingCount = playCount
+            playerActor.swingHitProps = {}
+            playerActor:pollAttackHits()
+
+            sound_effects.playCrateBreak = originalPlayCrateBreak
+            state.actors = savedActors
+            playerActor.attackHitbox = savedAttackHitbox
+            playerActor.swingHitProps = savedSwingHits
+            playerActor.attackPose.x = savedPose.x
+            playerActor.attackPose.y = savedPose.y
+            playerActor.attackPose.angle = savedPose.angle
+
+            propSoundOk = firstSwingCount == 1 and playCount == 2
+            propSoundDetail = string.format(
+                "%s first=%d next=%d",
+                tostring(breakableObject.name),
+                firstSwingCount,
+                playCount
+            )
+        end
+        allOk = check(
+            "crate/barrel hit sound fires once per prop per swing",
+            propSoundOk,
+            propSoundDetail
+        ) and allOk
+    end
+
     local sampleEnemy = enemyActors and enemyActors[1]
     if sampleEnemy then
         allOk = check("enemy has hp for kill→time loop",
@@ -702,9 +825,20 @@ function selftest.run(playerActor, enemyActors)
         playerActor.swingHitEnemies = {}
         playerActor:pollAttackHits()
         playerActor:pollAttackHits()
+        local expectedSwordDamage = playerActor.swordDamage
+            or player.SWORD_DAMAGE
+            or 1
         allOk = check("sword registers an enemy once per swing",
-            sampleEnemy.hp == savedHP - 1,
-            string.format("hp %d→%d", savedHP, sampleEnemy.hp)) and allOk
+            nearlyEqual(
+                sampleEnemy.hp,
+                savedHP - expectedSwordDamage
+            ),
+            string.format(
+                "hp %.2f→%.2f (damage %.2f)",
+                savedHP,
+                sampleEnemy.hp,
+                expectedSwordDamage
+            )) and allOk
         sampleEnemy.hp = savedHP
         sampleEnemy.hurtFlash = savedFlash
         sampleEnemy.lastPlayerSwingSerial = savedSerial
@@ -991,7 +1125,13 @@ function selftest.verifyVisibleKills(playerActor)
         playerActor:pollAttackHits()
 
         local hpAfter = probe.hp
-        local hitOk = hpAfter == expectedHp[typeId] - 1
+        local swordDamage = playerActor.swordDamage
+            or player.SWORD_DAMAGE
+            or 1
+        local hitOk = nearlyEqual(
+            hpAfter,
+            expectedHp[typeId] - swordDamage
+        )
         allOk = check(
             string.format("visible sword overlaps %s hurtbox", typeId),
             hitOk,

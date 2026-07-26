@@ -16,6 +16,8 @@
             }
         }
     },
+    "last.exportedFilePath": "/Users/shree/dev/lua/GMTK26/res/maps",
+    "map.lastUsedExportFilter": "Lua files (*.lua)",
     "openFiles": [
     ],
     "project": "map.tiled-project",

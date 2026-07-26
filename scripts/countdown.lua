@@ -7,7 +7,7 @@ countdown.__index = countdown
 local DEFAULT_DURATION = 120
 local DAMAGE_PULSE_DURATION = 0.4
 
---- opts: { duration = seconds } — jam default ~60–120.
+--- opts: { duration = seconds } — jam default is a focused 90-second run.
 function countdown.new(opts)
     opts = opts or {}
     local duration = opts.duration or DEFAULT_DURATION

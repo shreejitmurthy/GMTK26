@@ -1,5 +1,5 @@
 -- Title → narrative → run → pause / extract / cleansed presentation.
--- All UI text uses Italianno (Victorian script). Briefing scrolls when tall.
+-- Italianno is reserved for display titles; longer copy uses Cinzel Decorative.
 
 local game_map = require "scripts.game_map"
 local atmosphere = require "scripts.atmosphere"
@@ -18,7 +18,8 @@ local WIN_DAYLIGHT_END = 2.5
 local PANEL_MARGIN = 28
 local PAD = 8
 local GAP = 12
-local UI_STYLE = "italianno_scroll_v1"
+local NARRATIVE_PANEL_MAX_H = 560
+local UI_STYLE = "italianno_titles_cinzel_true_4x_v3"
 
 local NARRATIVE_STORY = {
     "You are a plague doctor sent into an",
@@ -46,14 +47,17 @@ local function ensureFonts(state)
     local function loadScript(size)
         return ui_font.new("res/fonts/Italianno-Regular.ttf", size)
     end
+    local function loadBody(size)
+        return ui_font.new("res/fonts/CinzelDecorative-Bold.ttf", size)
+    end
     state.uiStyle = UI_STYLE
     state.hudTimerFont = loadScript(80)
     state.hudTitleFont = loadScript(48)
     state.hudLabelFont = loadScript(30)
-    state.hudBodyFont = loadScript(30)
-    state.hudHelpFont = loadScript(28)
+    state.hudBodyFont = loadBody(18)
+    state.hudHelpFont = loadBody(16)
     state.hudSmallFont = loadScript(24)
-    state.hudSubtitleFont = loadScript(26)
+    state.hudSubtitleFont = loadBody(16)
 end
 
 function flow.ensureFonts(state)
@@ -72,20 +76,18 @@ end
 --- Soft drop shadow for readable light ink on dark scenes.
 function flow.printShadow(font, text, x, y, r, g, b, a)
     a = a or 1
-    love.graphics.setFont(font)
     love.graphics.setColor(0, 0, 0, 0.82 * a)
-    love.graphics.print(text, x + 2, y + 2)
+    ui_font.print(font, text, x + 2, y + 2)
     love.graphics.setColor(r, g, b, a)
-    love.graphics.print(text, x, y)
+    ui_font.print(font, text, x, y)
 end
 
 function flow.printfShadow(font, text, x, y, limit, align, r, g, b, a)
     a = a or 1
-    love.graphics.setFont(font)
     love.graphics.setColor(0, 0, 0, 0.82 * a)
-    love.graphics.printf(text, x + 2, y + 2, limit, align)
+    ui_font.printf(font, text, x + 2, y + 2, limit, align)
     love.graphics.setColor(r, g, b, a)
-    love.graphics.printf(text, x, y, limit, align)
+    ui_font.printf(font, text, x, y, limit, align)
 end
 
 local function hashNoise(n)
@@ -178,13 +180,17 @@ local function drawParchment(x, y, w, h)
 end
 
 local function drawInkText(font, text, x, y, limit, align)
-    love.graphics.setFont(font)
     love.graphics.setColor(0.22, 0.13, 0.07, 1)
-    love.graphics.printf(text, x, y, limit, align or "center")
+    ui_font.printf(font, text, x, y, limit, align or "center")
 end
 
 local function lineStep(font, extra)
-    return font:getHeight() + (extra or 10)
+    return ui_font.getHeight(font) + (extra or 10)
+end
+
+local function blockHeight(font, text, limit)
+    local _, lines = ui_font.getWrap(font, text, limit)
+    return math.max(1, #lines) * ui_font.getHeight(font)
 end
 
 local function fitPanel(sw, sh, wantW, wantH)
@@ -395,24 +401,29 @@ function flow.drawNarrative(state)
     local footerFont = state.hudHelpFont
     local pad = 32
     local panelW = math.min(560, sw - PANEL_MARGIN * 2)
-    local panelH = math.min(sh - PANEL_MARGIN * 2, sh * 0.88)
+    local panelH = math.min(
+        NARRATIVE_PANEL_MAX_H,
+        sh - PANEL_MARGIN * 2,
+        sh * 0.88
+    )
     local px = (sw - panelW) / 2
     local py = (sh - panelH) / 2
     drawParchment(px, py, panelW, panelH)
 
     local textW = panelW - pad * 2
     local textX = px + pad
-    local storyStep = lineStep(body, 6)
-    local rulesStep = lineStep(body, 4)
-    local titleBlock = titleFont:getHeight() + 10
-    local footerH = footerFont:getHeight() + 8
-    local scrollHintH = footerFont:getHeight() + 4
+    local titleBlock = ui_font.getHeight(titleFont) + 10
+    local footerH = ui_font.getHeight(footerFont) + 8
 
-    local contentH = #NARRATIVE_STORY * storyStep
-        + GAP
-        + #NARRATIVE_RULES * rulesStep
+    local contentH = GAP * 0.35
+    for _, line in ipairs(NARRATIVE_STORY) do
+        contentH = contentH + blockHeight(body, line, textW) + 6
+    end
+    for _, line in ipairs(NARRATIVE_RULES) do
+        contentH = contentH + blockHeight(body, line, textW) + 4
+    end
     local viewTop = py + pad + titleBlock
-    local viewBottom = py + panelH - pad - footerH - scrollHintH - 4
+    local viewBottom = py + panelH - pad - footerH - 8
     local viewH = math.max(40, viewBottom - viewTop)
     local maxScroll = math.max(0, contentH - viewH)
     state.narrativeMaxScroll = maxScroll
@@ -429,28 +440,21 @@ function flow.drawNarrative(state)
     local y = viewTop - scroll
     for _, line in ipairs(NARRATIVE_STORY) do
         drawInkText(body, line, textX, y, textW, "center")
-        y = y + storyStep
+        y = y + blockHeight(body, line, textW) + 6
     end
     y = y + GAP * 0.35
     for _, line in ipairs(NARRATIVE_RULES) do
         drawInkText(body, line, textX, y, textW, "center")
-        y = y + rulesStep
+        y = y + blockHeight(body, line, textW) + 4
     end
     love.graphics.setScissor()
 
     local footerY = py + panelH - pad - footerH
+    local footer = "Continue  ·  Enter / Space / click"
     if maxScroll > 0 then
-        local hint = (scroll < maxScroll - 1)
-            and "Scroll  ·  mouse wheel / ↓ ↑"
+        footer = (scroll < maxScroll - 1)
+            and "Scroll  ·  wheel / W S"
             or "Continue  ·  Enter / Space / click"
-        drawInkText(
-            footerFont,
-            hint,
-            textX,
-            footerY - scrollHintH,
-            textW,
-            "center"
-        )
         -- Tiny scroll thumb.
         local trackH = viewH
         local thumbH = math.max(18, trackH * (viewH / (contentH + 1)))
@@ -471,7 +475,7 @@ function flow.drawNarrative(state)
     end
     drawInkText(
         footerFont,
-        "Continue  ·  Enter / Space / click",
+        footer,
         textX,
         footerY,
         textW,
@@ -493,22 +497,17 @@ function flow.drawPause(state)
     }
     local step = lineStep(body, 8)
     local wantW = 420
-    local wantH = 48 + titleFont:getHeight() + GAP + #lines * step + 36
+    local wantH = 48 + ui_font.getHeight(titleFont) + GAP + #lines * step + 36
     local px, py, panelW, panelH = fitPanel(sw, sh, wantW, wantH)
     drawParchment(px, py, panelW, panelH)
     local y = py + 32
     drawInkText(titleFont, "Paused", px + 24, y, panelW - 48, "center")
-    y = y + titleFont:getHeight() + GAP
+    y = y + ui_font.getHeight(titleFont) + GAP
     for _, line in ipairs(lines) do
         drawInkText(body, line, px + 24, y, panelW - 48, "center")
         y = y + step
     end
     love.graphics.setColor(1, 1, 1, 1)
-end
-
-local function blockHeight(font, text, limit)
-    local _, lines = font:getWrap(text, limit)
-    return math.max(1, #lines) * font:getHeight()
 end
 
 function flow.drawVictory(state)

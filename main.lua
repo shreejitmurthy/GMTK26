@@ -15,6 +15,7 @@ local encounter_director = require "scripts.encounter_director"
 local enemy_test = require "scripts.enemy_test"
 local enemy_attacks = require "scripts.enemy_attacks"
 local game_flow = require "scripts.game_flow"
+local ui_font = require "scripts.ui_font"
 local sound_effects = require "scripts.sound_effects"
 local plague_senses = require "scripts.plague_senses"
 require "scripts.player"
@@ -244,6 +245,7 @@ function state:onNestCleansed(nest)
             nests.countCleansed(self.nests)
         ))
     else
+        sound_effects.playPotionPickup()
         print(string.format(
             "[nest] nest_%s sealed (districts %d/3)",
             nest.id,
@@ -575,16 +577,17 @@ function state:drawHud()
 
         local timerFont = self.hudTimerFont or prevFont
         local labelFont = self.hudSmallFont or self.hudHelpFont or prevFont
-        love.graphics.setFont(timerFont)
 
         local text = self.countdown:format()
-        local tw = timerFont:getWidth(text)
-        local th = timerFont:getHeight()
+        local tw = ui_font.getWidth(timerFont, text)
+        local th = ui_font.getHeight(timerFont)
         local cx = sw / 2
         local timerY = 10
         -- Clear the full Italianno line box so the fuse never cuts the digits.
-        local ascent = timerFont:getAscent() or (th * 0.75)
-        local descent = math.abs(timerFont:getDescent() or (th * 0.2))
+        local ascent = ui_font.getAscent(timerFont) or (th * 0.75)
+        local descent = math.abs(
+            ui_font.getDescent(timerFont) or (th * 0.2)
+        )
         local timerInkBottom = timerY + ascent + descent * 0.45
         local fuseY = timerInkBottom + 10
 
@@ -592,9 +595,9 @@ function state:drawHud()
         love.graphics.translate(cx, timerY)
         love.graphics.scale(scale, scale)
         love.graphics.setColor(0, 0, 0, 0.5 * a)
-        love.graphics.print(text, -tw / 2 + 2, 2)
+        ui_font.print(timerFont, text, -tw / 2 + 2, 2)
         love.graphics.setColor(r, g, b, a)
-        love.graphics.print(text, -tw / 2, 0)
+        ui_font.print(timerFont, text, -tw / 2, 0)
         love.graphics.pop()
 
         local fuseW = 200
@@ -618,8 +621,8 @@ function state:drawHud()
 
         local stackY = fuseY + fuseH + 8
         local label = "Plague Tolerance"
-        local lw = labelFont:getWidth(label)
-        local labelH = labelFont:getHeight()
+        local lw = ui_font.getWidth(labelFont, label)
+        local labelH = ui_font.getHeight(labelFont)
         game_flow.printShadow(
             labelFont,
             label,
@@ -635,9 +638,9 @@ function state:drawHud()
         if dmgPulse > 0 and dmgAmount > 0 then
             local floatText = string.format("-%.0fs", dmgAmount)
             local rise = (1 - dmgPulse) * 18
-            love.graphics.setFont(labelFont)
             love.graphics.setColor(1, 0.35, 0.28, dmgPulse)
-            love.graphics.print(
+            ui_font.print(
+                labelFont,
                 floatText,
                 cx + tw * 0.42 * scale,
                 timerY + 4 - rise
@@ -647,9 +650,9 @@ function state:drawHud()
         if healPulse > 0 and healAmount > 0 then
             local floatText = string.format("+%.0fs", healAmount)
             local rise = (1 - healPulse) * 18
-            love.graphics.setFont(labelFont)
             love.graphics.setColor(0.45, 0.95, 0.55, healPulse)
-            love.graphics.print(
+            ui_font.print(
+                labelFont,
                 floatText,
                 cx - tw * 0.55 * scale,
                 timerY + 4 - rise
@@ -671,9 +674,9 @@ function state:drawHud()
             local potionsLine = string.format("Potions  %d/3", districtCount)
             local wellLine = "Well  " .. wellState
             local statusGap = 20
-            local statusW = labelFont:getWidth(potionsLine)
+            local statusW = ui_font.getWidth(labelFont, potionsLine)
                 + statusGap
-                + labelFont:getWidth(wellLine)
+                + ui_font.getWidth(labelFont, wellLine)
             local vialIds = { "a", "b", "c", "well" }
             local vialPitch = 26
             local vialRowW = vialPitch * (#vialIds - 1)
@@ -709,7 +712,7 @@ function state:drawHud()
             game_flow.printShadow(
                 labelFont,
                 wellLine,
-                statusX + labelFont:getWidth(potionsLine) + statusGap,
+                statusX + ui_font.getWidth(labelFont, potionsLine) + statusGap,
                 statusY,
                 wellCol[1],
                 wellCol[2],
@@ -746,8 +749,8 @@ function state:drawHud()
         local font = self.hudHelpFont or prevFont
         local msg =
             "Collect three potions, then cleanse the Well."
-        local tw = font:getWidth(msg)
-        local th = font:getHeight()
+        local tw = ui_font.getWidth(font, msg)
+        local th = ui_font.getHeight(font)
         local bx = (sw - tw) / 2 - 14
         -- Always below the measured HUD stack (never on top of Potions plate).
         local by = math.max(
@@ -780,8 +783,8 @@ function state:drawHud()
     then
         local msg = promptMsg
         local font = self.hudHelpFont or prevFont
-        local tw = font:getWidth(msg)
-        local th = font:getHeight()
+        local tw = ui_font.getWidth(font, msg)
+        local th = ui_font.getHeight(font)
         local bx = (sw - tw) / 2 - 14
         local by = sh * 0.76
         game_flow.drawHudPlate(bx, by - 2, tw + 28, th + 8, 0.6)
@@ -802,15 +805,15 @@ function state:drawHud()
     local subtitle, subtitleAlpha = sound_effects.getNearDeathSubtitle()
     if subtitle then
         local font = self.hudHelpFont or prevFont
-        local textWidth = font:getWidth(subtitle)
+        local textWidth = ui_font.getWidth(font, subtitle)
         local boxWidth = math.min(sw - 48, textWidth + 36)
         local boxX = (sw - boxWidth) / 2
-        local textY = sh - font:getHeight() - 48
+        local textY = sh - ui_font.getHeight(font) - 48
         game_flow.drawHudPlate(
             boxX,
             textY - 4,
             boxWidth,
-            font:getHeight() + 10,
+            ui_font.getHeight(font) + 10,
             0.6 * subtitleAlpha
         )
         game_flow.printfShadow(
@@ -846,9 +849,10 @@ function state:drawHud()
     end
 
     if state.enemyTestMode then
-        love.graphics.setFont(self.hudSmallFont or self.hudHelpFont or prevFont)
+        local font = self.hudSmallFont or self.hudHelpFont or prevFont
         love.graphics.setColor(1, 1, 1, 0.75)
-        love.graphics.print(
+        ui_font.print(
+            font,
             "ENEMY TEST · WASD · Shift dash · Space swing · R reset · Esc quit",
             10,
             sh - 28
@@ -858,10 +862,11 @@ function state:drawHud()
     enemy_test.drawHud(state)
 
     if physics.debug then
-        love.graphics.setFont(self.hudSmallFont or self.hudHelpFont or prevFont)
+        local font = self.hudSmallFont or self.hudHelpFont or prevFont
         love.graphics.setColor(1, 1, 1, 0.85)
         local speed = playerActor:getSpeed()
-        love.graphics.print(
+        ui_font.print(
+            font,
             string.format(
                 "DEBUG | col %.0f,%.0f |v| %.2f | pos %.0f,%.0f",
                 playerActor.collider:getX(),
@@ -891,7 +896,8 @@ function state:drawHud()
             end
         end
         local enc = encounter_director.debugCounts(self)
-        love.graphics.print(
+        ui_font.print(
+            font,
             string.format(
                 "C:%d F:%d K:%d R:%d near %s | enc %d+%d/%d",
                 counts.chaser,
@@ -906,7 +912,8 @@ function state:drawHud()
             10,
             sh - 88
         )
-        love.graphics.print(
+        ui_font.print(
+            font,
             string.format(
                 "frame %.2fms | last collapse wave %.2fms",
                 (self.lastFrameDt or 0) * 1000,
@@ -982,13 +989,11 @@ local function beginRun(opts)
         boundaryCount
     ))
 
-    state.countdown = countdown.new({ duration = 120 })
+    state.countdown = countdown.new()
     if enemyTest then
         -- Natural decay off; combat damage / sword kills still work.
         state.countdown:pause()
     end
-    love.graphics.setFont(state.hudHelpFont)
-
     local spawnData = game_map.getSpawnPoints(state.gameMap)
     local spawnX, spawnY = game_map.getPlayerStart(state.gameMap)
     if not spawnX then
@@ -1056,7 +1061,7 @@ local function beginRun(opts)
     return playerActor, enemies
 end
 
---- Tear down actors/physics and rebuild a clean 120s run (no Windfield leaks).
+--- Tear down actors/physics and rebuild a clean 90s run (no Windfield leaks).
 function state:prepareRestart()
     print("[run] prepareRestart — safe teardown + rebuild")
     encounter_director.reset()
@@ -1142,6 +1147,14 @@ function love.load(args)
         check("Continue starts GAMEPLAY", state.gameState == GAME_STATE.GAMEPLAY)
         check("run has countdown", state.countdown ~= nil)
         check("3 districts + well loaded", state.nests and #state.nests == 4)
+        check(
+            "potion pickup sound plays",
+            sound_effects.playPotionPickup()
+        )
+        check(
+            "crate/barrel break sound plays",
+            sound_effects.playCrateBreak()
+        )
         local well = nests.getWell(state.nests)
         check("well locked at start", well ~= nil and well.locked == true)
         check("not win before seals", not nests.allCleansed(state.nests))
@@ -1308,17 +1321,15 @@ function love.draw()
             encounter_director.drawWorld()
         end
         enemy_attacks.drawAll(state.actors)
-        if state.hudHelpFont then
-            love.graphics.setFont(state.hudHelpFont)
-        elseif state.hudLabelFont then
-            love.graphics.setFont(state.hudLabelFont)
-        end
+        local floatFont = state.hudHelpFont
+            or state.hudLabelFont
+            or love.graphics.getFont()
         for _, f in ipairs(state.floats or {}) do
             if f.world then
                 local a = math.max(0, f.life / f.maxLife)
                 love.graphics.setColor(f.r, f.g, f.b, a)
-                local tw = love.graphics.getFont():getWidth(f.text)
-                love.graphics.print(f.text, f.x - tw / 2, f.y)
+                local tw = ui_font.getWidth(floatFont, f.text)
+                ui_font.print(floatFont, f.text, f.x - tw / 2, f.y)
             end
         end
         love.graphics.setColor(1, 1, 1, 1)

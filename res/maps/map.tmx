@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="30" height="24" tilewidth="16" tileheight="16" infinite="0" nextlayerid="11" nextobjectid="36">
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="30" height="24" tilewidth="16" tileheight="16" infinite="0" nextlayerid="12" nextobjectid="37">
  <properties>
   <property name="nestA" value="Ash Market"/>
   <property name="nestB" value="Ossuary"/>
@@ -42,7 +42,7 @@
 1584,1585,1586,1587,1588,1589,1590,1584,1585,1586,1587,1588,1589,1590,1584,1585,1586,1587,1588,1589,1590,1584,1585,1586,1587,1588,1589,1590,1584,1585,
 1591,1592,1593,1594,1595,1596,1597,1591,1592,1593,1594,1595,1596,1597,1591,1592,1593,1594,1595,1596,1597,1591,1592,1593,1594,1595,1596,1597,1591,1592,
 1598,1599,1600,1601,1602,1603,1604,1598,1599,1600,1601,1602,1603,1604,1598,1599,1600,1601,1602,1603,1604,1598,1599,1600,1601,1602,1603,1604,1598,1599
-  </data>
+</data>
  </layer>
  <layer id="5" name="Decals A" width="30" height="24">
   <data encoding="csv">
@@ -70,7 +70,7 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-  </data>
+</data>
  </layer>
  <layer id="6" name="Decals B" width="30" height="24">
   <data encoding="csv">
@@ -98,7 +98,7 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1591,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-  </data>
+</data>
  </layer>
  <layer id="7" name="Decals C" width="30" height="24">
   <data encoding="csv">
@@ -126,7 +126,7 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-  </data>
+</data>
  </layer>
  <layer id="8" name="Props" width="30" height="24">
   <data encoding="csv">
@@ -136,25 +136,25 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,197,0,197,0,262,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,0,197,0,0,
-0,0,260,261,283,284,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,194,0,174,0,0,0,
+0,0,260,261,283,284,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,151,152,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,171,0,174,175,0,0,
 0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,0,0,0,197,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,218,218,218,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,171,174,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,
+0,0,0,151,152,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,170,171,174,175,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,
-0,0,194,0,0,174,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,0,0,0,197,0,0,0,0,0,0,0,0,0,0,0,
-0,260,0,0,0,194,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,194,174,0,0,0,0,0,0,
-0,0,174,194,283,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,174,0,0,194,0,0,0,0,0,0,
+0,0,0,0,0,151,152,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,
+0,0,194,0,0,174,175,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,217,0,0,0,0,0,0,0,0,197,0,0,0,0,0,0,197,0,0,0,0,151,152,0,0,0,0,0,
+0,260,151,152,0,194,0,0,0,0,0,0,0,0,0,0,0,0,0,0,151,152,171,174,175,0,0,0,0,0,
+0,0,174,175,283,217,0,0,0,0,0,0,0,0,0,0,0,0,0,0,174,175,0,171,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,261,0,0,284,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-  </data>
+</data>
  </layer>
  <layer id="10" name="Walls Layer" width="30" height="24">
   <data encoding="csv">
@@ -182,7 +182,7 @@
 62,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,63,
 62,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,63,
 141,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,143,145
-  </data>
+</data>
  </layer>
  <layer id="2" name="Fountain Layer" width="30" height="24">
   <data encoding="csv">
@@ -210,7 +210,7 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-  </data>
+</data>
  </layer>
  <objectgroup id="3" name="Circle Colliders">
   <object id="1" name="fountain" x="208" y="176" width="64" height="48">
@@ -218,48 +218,27 @@
   </object>
  </objectgroup>
  <objectgroup id="4" name="Rectangle Colliders">
-  <object id="2" name="market_burned_stall" x="34" y="99" width="60" height="11">
-  </object>
-  <object id="3" name="market_abandoned_load" x="34" y="195" width="28" height="11">
-  </object>
-  <object id="4" name="market_ash_crate_n" x="34" y="243" width="12" height="11">
-  </object>
-  <object id="5" name="market_ash_barrel_n" x="82" y="243" width="12" height="11">
-  </object>
-  <object id="6" name="market_ash_ruin_w" x="18" y="275" width="12" height="11">
-  </object>
-  <object id="7" name="market_ash_crate_e" x="82" y="275" width="12" height="11">
-  </object>
-  <object id="8" name="market_ash_heap_s" x="34" y="291" width="44" height="11">
-  </object>
-  <object id="9" name="watch_gate_post_w" x="338" y="67" width="12" height="11">
-  </object>
-  <object id="10" name="watch_gate_post_e" x="450" y="67" width="12" height="11">
-  </object>
-  <object id="11" name="watch_pyre_post" x="402" y="51" width="12" height="11">
-  </object>
-  <object id="12" name="watch_pyre_torch_w" x="386" y="67" width="12" height="11">
-  </object>
-  <object id="13" name="watch_pyre_torch_e" x="418" y="67" width="12" height="11">
-  </object>
-  <object id="14" name="watch_pyre_crate_w" x="386" y="115" width="12" height="11">
-  </object>
-  <object id="15" name="watch_pyre_crate_e" x="418" y="115" width="12" height="11">
-  </object>
-  <object id="16" name="watch_barricade_n" x="370" y="147" width="44" height="11">
-  </object>
-  <object id="17" name="watch_barricade_e" x="434" y="195" width="12" height="43">
-  </object>
-  <object id="18" name="watch_supply" x="354" y="275" width="28" height="11">
-  </object>
-  <object id="19" name="drain_barrel_w" x="322" y="291" width="12" height="11">
-  </object>
-  <object id="20" name="drain_crate_e" x="370" y="291" width="12" height="11">
-  </object>
-  <object id="21" name="drain_ruin_sw" x="322" y="323" width="12" height="11">
-  </object>
-  <object id="22" name="drain_ruin_se" x="370" y="323" width="12" height="11">
-  </object>
+  <object id="2" name="market_burned_stall" x="34" y="99" width="60" height="11"/>
+  <object id="3" name="market_abandoned_load" x="34" y="195" width="28" height="11"/>
+  <object id="4" name="market_ash_crate_n" x="34" y="243" width="12" height="11"/>
+  <object id="5" name="market_ash_barrel_n" x="82" y="243" width="12" height="11"/>
+  <object id="6" name="market_ash_ruin_w" x="18" y="275" width="12" height="11"/>
+  <object id="7" name="market_ash_crate_e" x="82" y="275" width="12" height="11"/>
+  <object id="8" name="market_ash_heap_s" x="34" y="291" width="44" height="11"/>
+  <object id="9" name="watch_gate_post_w" x="338" y="67" width="12" height="11"/>
+  <object id="10" name="watch_gate_post_e" x="450" y="67" width="12" height="11"/>
+  <object id="11" name="watch_pyre_post" x="402" y="51" width="12" height="11"/>
+  <object id="12" name="watch_pyre_torch_w" x="386" y="67" width="12" height="11"/>
+  <object id="13" name="watch_pyre_torch_e" x="418" y="67" width="12" height="11"/>
+  <object id="14" name="watch_pyre_crate_w" x="386" y="115" width="12" height="11"/>
+  <object id="15" name="watch_pyre_crate_e" x="418" y="115" width="12" height="11"/>
+  <object id="16" name="watch_barricade_n" x="370" y="147" width="44" height="11"/>
+  <object id="17" name="watch_barricade_e" x="434" y="195" width="12" height="43"/>
+  <object id="18" name="watch_supply" x="354" y="275" width="28" height="11"/>
+  <object id="19" name="drain_barrel_w" x="322" y="291" width="12" height="11"/>
+  <object id="20" name="drain_crate_e" x="370" y="291" width="12" height="11"/>
+  <object id="21" name="drain_ruin_sw" x="322" y="323" width="12" height="11"/>
+  <object id="22" name="drain_ruin_se" x="370" y="323" width="12" height="11"/>
  </objectgroup>
  <objectgroup id="9" name="Spawns">
   <object id="23" name="nest_a" x="48" y="256" width="32" height="32">
@@ -291,8 +270,7 @@
     <property name="nest" value="well"/>
    </properties>
   </object>
-  <object id="27" name="player_start" x="224" y="320" width="16" height="16">
-  </object>
+  <object id="27" name="player_start" x="224" y="320" width="16" height="16"/>
   <object id="28" name="spawn_chaser_a" x="48" y="208" width="16" height="16">
    <properties>
     <property name="nest" value="a"/>

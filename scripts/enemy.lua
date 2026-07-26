@@ -6,6 +6,7 @@ local physics = require "scripts.physics"
 local enemy_types = require "scripts.enemy_types"
 local enemy_attacks = require "scripts.enemy_attacks"
 local sound_effects = require "scripts.sound_effects"
+local ui_font = require "scripts.ui_font"
 
 enemy = {}
 setmetatable(enemy, { __index = actor })
@@ -423,7 +424,7 @@ function enemy:destroyNow(opts)
 end
 
 --- Hook for player sword hits. A swing serial is accepted at most once.
-function enemy:onHitByPlayer(swingSerial)
+function enemy:onHitByPlayer(swingSerial, damage)
     if self.dead or self.dying then
         return false
     end
@@ -432,11 +433,15 @@ function enemy:onHitByPlayer(swingSerial)
     end
     self.lastPlayerSwingSerial = swingSerial
     local ex, ey = self.pos.x, self.pos.y
-    self.hp = math.max(0, (self.hp or self.maxHp or 1) - 1)
+    damage = math.max(0, damage or 1)
+    self.hp = math.max(
+        0,
+        (self.hp or self.maxHp or 1) - damage
+    )
     self.hurtFlash = HURT_FLASH_DURATION
     sound_effects.playEnemyHitImpact()
     print(string.format(
-        "[hit] PlayerAttack hit %s (%s @ %.1f, %.1f) hp=%d",
+        "[hit] PlayerAttack hit %s (%s @ %.1f, %.1f) hp=%.2f",
         self.enemyType or "enemy",
         self.label or "enemy",
         ex,
@@ -726,7 +731,8 @@ function enemy:draw()
 
     if (DEBUG or physics.debug) and self.debugLetter then
         love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.print(
+        ui_font.print(
+            debug_font or love.graphics.getFont(),
             self.debugLetter,
             self.pos.x - 3,
             self.pos.y - self.hitH / 2 - 12
