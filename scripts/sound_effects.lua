@@ -337,6 +337,31 @@ function sound_effects.playEnemyKilled(isLargeEnemy)
     return played
 end
 
+--- Districts sealed — Plague Well unlocks (heavy impact + wet cue).
+function sound_effects.playWellUnlock()
+    ensureLoaded()
+    local played = playSource(sources.largeDeathImpact)
+    local count = #sources.squelches
+    if count > 0 then
+        played = playSource(sources.squelches[love.math.random(count)]) or played
+    end
+    return played
+end
+
+--- Well cleansed — bright resolve sting; clear plague ducking / near-death.
+function sound_effects.playWellCleansed()
+    ensureLoaded()
+    stopSource(sources.nearDeath)
+    nearDeathActive = false
+    nearDeathSubtitleTime = 0
+    applyMuffle(0, true)
+    local played = playSource(sources.largeDeathImpact)
+    if sources.impacts and #sources.impacts > 0 then
+        played = playSource(sources.impacts[1]) or played
+    end
+    return played
+end
+
 local function updateFootsteps(dt, walking)
     if not walking then
         stopSource(sources.footstep)

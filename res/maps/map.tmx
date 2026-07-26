@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="30" height="24" tilewidth="16" tileheight="16" infinite="0" nextlayerid="11" nextobjectid="19">
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="30" height="24" tilewidth="16" tileheight="16" infinite="0" nextlayerid="11" nextobjectid="33">
  <properties>
   <property name="nestA" value="Ash Market"/>
-  <property name="nestB" value="Plague Well"/>
+  <property name="nestB" value="Drain Court"/>
   <property name="nestC" value="Watch Yard"/>
+  <property name="nestWell" value="Plague Well"/>
   <property name="playableH" type="int" value="352"/>
   <property name="playableW" type="int" value="448"/>
   <property name="playableX" type="int" value="16"/>
   <property name="playableY" type="int" value="16"/>
   <property name="sector" value="infested_courtyard"/>
-  <property name="tilesetNote" value="One cobble court; district identity comes from restrained decay, clustered props, and visible architecture."/>
+  <property name="tilesetNote" value="One cobble court; seal 3 district nests, then cleanse the locked Plague Well fountain."/>
   <property name="wallThickness" type="int" value="16"/>
  </properties>
  <tileset firstgid="1" source="dungeon_tiles.tsx"/>
@@ -55,14 +56,14 @@
 0,0,0,0,0,0,0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,288,288,0,288,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,288,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,288,288,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,288,288,288,288,288,288,288,288,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,288,0,0,0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,288,0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,288,288,288,288,288,288,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,288,0,0,0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,288,0,0,0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,288,0,0,288,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,288,288,288,288,288,288,288,288,288,288,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -90,11 +91,11 @@
 0,0,0,0,0,0,0,0,0,0,0,1597,1595,0,0,0,0,1592,1597,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,288,1594,0,1597,1595,0,1591,1596,159,0,288,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,1596,1594,0,1597,1595,0,0,288,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,288,1596,1594,0,0,159,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,159,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,288,1596,1594,0,0,159,1593,0,0,1594,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1593,0,0,1594,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,159,0,1592,0,0,1593,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1591,0,0,1592,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1591,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
   </data>
@@ -105,18 +106,18 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,0,0,0,0,0,288,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,159,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,159,0,0,0,288,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,159,0,0,0,0,0,288,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,159,288,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,0,0,0,0,0,288,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,159,0,0,288,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,159,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,159,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,288,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,159,288,0,288,0,288,0,0,0,
@@ -132,11 +133,11 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,0,0,0,0,262,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,197,0,197,0,262,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,0,197,0,0,
 0,0,260,261,283,284,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,194,0,174,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,0,0,0,197,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,218,218,218,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,
@@ -144,12 +145,12 @@
 0,0,171,174,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,262,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,194,0,0,174,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,0,0,0,197,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,194,174,0,0,0,0,0,0,
-0,0,0,0,0,0,194,174,0,0,0,0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,260,0,0,0,194,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,194,174,0,0,0,0,0,0,
+0,0,174,194,283,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,174,0,0,194,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,197,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,261,0,0,284,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
@@ -221,68 +222,102 @@
   </object>
   <object id="3" name="market_abandoned_load" x="34" y="195" width="28" height="11">
   </object>
-  <object id="4" name="market_stockpile" x="98" y="291" width="28" height="11">
+  <object id="4" name="market_ash_crate_n" x="34" y="243" width="12" height="11">
   </object>
-  <object id="5" name="watch_gate_post_w" x="338" y="67" width="12" height="11">
+  <object id="5" name="market_ash_barrel_n" x="82" y="243" width="12" height="11">
   </object>
-  <object id="6" name="watch_gate_post_e" x="450" y="67" width="12" height="11">
+  <object id="6" name="market_ash_ruin_w" x="18" y="275" width="12" height="11">
   </object>
-  <object id="7" name="watch_barricade_n" x="370" y="147" width="44" height="11">
+  <object id="7" name="market_ash_crate_e" x="82" y="275" width="12" height="11">
   </object>
-  <object id="8" name="watch_barricade_e" x="434" y="195" width="12" height="43">
+  <object id="8" name="market_ash_heap_s" x="34" y="291" width="44" height="11">
   </object>
-  <object id="9" name="watch_supply" x="354" y="275" width="28" height="11">
+  <object id="9" name="watch_gate_post_w" x="338" y="67" width="12" height="11">
+  </object>
+  <object id="10" name="watch_gate_post_e" x="450" y="67" width="12" height="11">
+  </object>
+  <object id="11" name="watch_pyre_post" x="402" y="51" width="12" height="11">
+  </object>
+  <object id="12" name="watch_pyre_torch_w" x="386" y="67" width="12" height="11">
+  </object>
+  <object id="13" name="watch_pyre_torch_e" x="418" y="67" width="12" height="11">
+  </object>
+  <object id="14" name="watch_pyre_crate_w" x="386" y="115" width="12" height="11">
+  </object>
+  <object id="15" name="watch_pyre_crate_e" x="418" y="115" width="12" height="11">
+  </object>
+  <object id="16" name="watch_barricade_n" x="370" y="147" width="44" height="11">
+  </object>
+  <object id="17" name="watch_barricade_e" x="434" y="195" width="12" height="43">
+  </object>
+  <object id="18" name="watch_supply" x="354" y="275" width="28" height="11">
+  </object>
+  <object id="19" name="drain_barrel_w" x="322" y="291" width="12" height="11">
+  </object>
+  <object id="20" name="drain_crate_e" x="370" y="291" width="12" height="11">
+  </object>
+  <object id="21" name="drain_ruin_sw" x="322" y="323" width="12" height="11">
+  </object>
+  <object id="22" name="drain_ruin_se" x="370" y="323" width="12" height="11">
   </object>
  </objectgroup>
  <objectgroup id="9" name="Spawns">
-  <object id="10" name="nest_a" x="64" y="224" width="32" height="32">
+  <object id="23" name="nest_a" x="48" y="256" width="32" height="32">
    <properties>
     <property name="cleanseRadius" type="int" value="36"/>
     <property name="district" value="Ash Market"/>
     <property name="nest" value="a"/>
    </properties>
   </object>
-  <object id="11" name="nest_b" x="224" y="176" width="32" height="32">
+  <object id="24" name="nest_b" x="336" y="288" width="32" height="32">
    <properties>
     <property name="cleanseRadius" type="int" value="36"/>
-    <property name="district" value="Plague Well"/>
+    <property name="district" value="Drain Court"/>
     <property name="nest" value="b"/>
    </properties>
   </object>
-  <object id="12" name="nest_c" x="384" y="192" width="32" height="32">
+  <object id="25" name="nest_c" x="400" y="80" width="32" height="32">
    <properties>
     <property name="cleanseRadius" type="int" value="40"/>
     <property name="district" value="Watch Yard"/>
     <property name="nest" value="c"/>
    </properties>
   </object>
-  <object id="13" name="player_start" x="224" y="320" width="16" height="16">
+  <object id="26" name="nest_well" x="224" y="176" width="32" height="32">
+   <properties>
+    <property name="cleanseRadius" type="int" value="40"/>
+    <property name="district" value="Plague Well"/>
+    <property name="lockedUntilDistricts" type="bool" value="true"/>
+    <property name="nest" value="well"/>
+   </properties>
   </object>
-  <object id="14" name="spawn_chaser_a" x="48" y="144" width="16" height="16">
+  <object id="27" name="player_start" x="224" y="320" width="16" height="16">
+  </object>
+  <object id="28" name="spawn_chaser_a" x="48" y="208" width="16" height="16">
    <properties>
     <property name="nest" value="a"/>
     <property name="type" value="chaser"/>
    </properties>
   </object>
-  <object id="15" name="spawn_fleer_a" x="144" y="272" width="16" height="16">
+  <object id="29" name="spawn_fleer_a" x="112" y="304" width="16" height="16">
    <properties>
     <property name="nest" value="a"/>
     <property name="type" value="fleer"/>
    </properties>
   </object>
-  <object id="16" name="spawn_keeper_b" x="192" y="96" width="16" height="16">
+  <object id="30" name="spawn_keeper_b" x="288" y="256" width="16" height="16">
    <properties>
     <property name="nest" value="b"/>
     <property name="type" value="keeper"/>
    </properties>
   </object>
-  <object id="17" name="spawn_chaser_b" x="288" y="240" width="16" height="16">
+  <object id="31" name="spawn_chaser_b" x="384" y="304" width="16" height="16">
    <properties>
     <property name="nest" value="b"/>
     <property name="type" value="chaser"/>
    </properties>
   </object>
-  <object id="18" name="spawn_ranger_c" x="400" y="112" width="16" height="16">
+  <object id="32" name="spawn_ranger_c" x="352" y="96" width="16" height="16">
    <properties>
     <property name="nest" value="c"/>
     <property name="type" value="ranger"/>

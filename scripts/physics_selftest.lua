@@ -524,16 +524,39 @@ function selftest.run(playerActor, enemyActors)
             nestsMod.CLEANSE_SECONDS, nestsMod.CLEANSE_START_COST_SECONDS,
             tostring(nestsMod.CLEANSE_HOLD_KEY))) and allOk
     if state and state.nests then
-        allOk = check("nests loaded from map (3)",
-            #state.nests == 3,
-            string.format("count=%d", #state.nests)) and allOk
+        allOk = check("nests loaded from map (3 districts + well)",
+            #state.nests == 4
+                and nestsMod.getWell(state.nests) ~= nil
+                and not nestsMod.wellUnlocked(state.nests)
+                and not nestsMod.allCleansed(state.nests),
+            string.format(
+                "count=%d well=%s unlocked=%s",
+                #state.nests,
+                tostring(nestsMod.getWell(state.nests) ~= nil),
+                tostring(nestsMod.wellUnlocked(state.nests))
+            )) and allOk
         local maxR = 0
+        local wellOnFountain = false
+        local districtOnFountain = false
         for _, nest in ipairs(state.nests) do
             maxR = math.max(maxR, nest.radius or 0)
+            local onStamp = nest.x >= 13 * 16 and nest.x <= 16 * 16
+                and nest.y >= 10 * 16 and nest.y <= 13 * 16
+            if nestsMod.isWell(nest) then
+                wellOnFountain = onStamp
+                    or (math.abs(nest.x - 15 * 16) < 8
+                        and math.abs(nest.y - 12 * 16) < 8)
+            elseif onStamp then
+                districtOnFountain = true
+            end
         end
         allOk = check("nest cleanse radii are tight (<=40)",
             maxR <= 40,
             string.format("maxR=%.0f", maxR)) and allOk
+        allOk = check("well sits on fountain; districts do not",
+            wellOnFountain and not districtOnFountain,
+            string.format("wellOn=%s districtOn=%s",
+                tostring(wellOnFountain), tostring(districtOnFountain))) and allOk
 
         local protectedOk = true
         for row = 10, 13 do

@@ -1,5 +1,5 @@
 -- Title → narrative → run → pause / extract / cleansed presentation.
--- Keeps Italianno for titles and body; readability via size + contrast + shadow.
+-- All UI text uses Italianno (Victorian script). Briefing scrolls when tall.
 
 local game_map = require "scripts.game_map"
 local atmosphere = require "scripts.atmosphere"
@@ -10,45 +10,63 @@ local flow = {}
 
 local FOUNTAIN_X = 15 * 16
 local FOUNTAIN_Y = 12 * 16
-local WIN_PRESENT_SECONDS = 3.2
+--- Staged cleanse beat: flash → daylight recovery → victory UI.
+local WIN_PRESENT_SECONDS = 5.4
+local WIN_FLASH_END = 0.6
+local WIN_DAYLIGHT_END = 2.5
+
+local PANEL_MARGIN = 28
+local PAD = 8
+local GAP = 12
+local UI_STYLE = "italianno_scroll_v1"
 
 local NARRATIVE_STORY = {
     "You are a plague doctor sent into an",
     "infested Victorian courtyard.",
-    "The fountain — the Plague Well —",
-    "is the heart of the infection.",
+    "Collect all three sealed plague potions",
+    "scattered through the districts.",
+    "Only then can you cleanse the Plague Well",
+    "at the fountain — and break the infection.",
     "Your plague tolerance is a countdown.",
     "Time is your life.",
-    "Seal all three nests. Cleanse the well.",
 }
 
 local NARRATIVE_RULES = {
     "WASD move · Shift dash · Mouse / Space attack",
-    "Hold E to cleanse nests",
+    "Hold E to collect potions · Well unlocks at 3/3",
+    "Then Hold E at the fountain to cleanse the Well",
     "Kills restore time · Hits & cleansing cost it",
     "Cracking ground collapses into the abyss",
 }
 
 local function ensureFonts(state)
-    if state.hudTimerFont and state.hudSubtitleFont then
+    if state.hudTimerFont and state.uiStyle == UI_STYLE then
         return
     end
-    local function loadScriptFont(size)
+    local function loadScript(size)
         return ui_font.new("res/fonts/Italianno-Regular.ttf", size)
     end
-    state.hudTimerFont = loadScriptFont(80)
-    state.hudLabelFont = loadScriptFont(34)
-    state.hudHelpFont = loadScriptFont(30)
-    state.hudBodyFont = loadScriptFont(32)
-    state.hudSmallFont = loadScriptFont(26)
-    state.hudSubtitleFont = ui_font.new(
-        "res/fonts/RobotoMono-VariableFont_wght.ttf",
-        22
-    )
+    state.uiStyle = UI_STYLE
+    state.hudTimerFont = loadScript(80)
+    state.hudTitleFont = loadScript(48)
+    state.hudLabelFont = loadScript(30)
+    state.hudBodyFont = loadScript(30)
+    state.hudHelpFont = loadScript(28)
+    state.hudSmallFont = loadScript(24)
+    state.hudSubtitleFont = loadScript(26)
 end
 
 function flow.ensureFonts(state)
     ensureFonts(state)
+end
+
+--- Soft dark plate for HUD clusters on busy cobble.
+function flow.drawHudPlate(x, y, w, h, alpha)
+    alpha = alpha or 0.62
+    love.graphics.setColor(0.05, 0.04, 0.03, alpha)
+    love.graphics.rectangle("fill", x, y, w, h, 6, 6)
+    love.graphics.setColor(0.9, 0.85, 0.7, 0.1)
+    love.graphics.rectangle("line", x + 0.5, y + 0.5, w - 1, h - 1, 6, 6)
 end
 
 --- Soft drop shadow for readable light ink on dark scenes.
@@ -114,22 +132,20 @@ local function drawParchment(x, y, w, h)
     love.graphics.rectangle("fill", x + 8, y + 8, w - 16, h - 16)
 
     -- Fiber / grain noise
-    for i = 1, 55 do
+    for i = 1, 40 do
         local n1 = hashNoise(i * 3.1)
         local n2 = hashNoise(i * 7.7 + 2)
         local n3 = hashNoise(i * 11.3 + 5)
         local fx = x + 10 + n1 * (w - 20)
         local fy = y + 10 + n2 * (h - 20)
-        love.graphics.setColor(0.62, 0.5, 0.32, 0.08 + n3 * 0.1)
+        love.graphics.setColor(0.62, 0.5, 0.32, 0.06 + n3 * 0.07)
         love.graphics.rectangle("fill", fx, fy, 6 + n3 * 10, 1)
     end
 
-    -- Stains
     local stains = {
-        { 0.18, 0.22, 18, 0.1 },
-        { 0.72, 0.35, 14, 0.08 },
-        { 0.4, 0.78, 16, 0.09 },
-        { 0.85, 0.7, 12, 0.07 },
+        { 0.18, 0.22, 16, 0.08 },
+        { 0.72, 0.35, 12, 0.06 },
+        { 0.85, 0.78, 11, 0.06 },
     }
     for _, s in ipairs(stains) do
         love.graphics.setColor(0.55, 0.42, 0.22, s[4])
@@ -163,12 +179,22 @@ end
 
 local function drawInkText(font, text, x, y, limit, align)
     love.graphics.setFont(font)
-    love.graphics.setColor(0.26, 0.15, 0.08, 1)
+    love.graphics.setColor(0.22, 0.13, 0.07, 1)
     love.graphics.printf(text, x, y, limit, align or "center")
 end
 
-local function lineStep(font)
-    return font:getHeight() + 8
+local function lineStep(font, extra)
+    return font:getHeight() + (extra or 10)
+end
+
+local function fitPanel(sw, sh, wantW, wantH)
+    local maxW = sw - PANEL_MARGIN * 2
+    local maxH = sh - PANEL_MARGIN * 2
+    local w = math.min(wantW, maxW)
+    local h = math.min(wantH, maxH)
+    local px = (sw - w) / 2
+    local py = (sh - h) / 2
+    return px, py, w, h
 end
 
 function flow.resetWin(state)
@@ -176,6 +202,9 @@ function flow.resetWin(state)
     state.winReady = false
     state.winTimer = 0
     atmosphere.setCleanse(0)
+    if atmosphere.setWinFlash then
+        atmosphere.setWinFlash(0)
+    end
 end
 
 function flow.beginWinPresentation(state)
@@ -183,9 +212,14 @@ function flow.beginWinPresentation(state)
     state.winReady = false
     state.winTimer = 0
     atmosphere.setCleanse(0)
+    atmosphere.setWinFlash(0)
     -- Hold camera on the fountain for the cleanse beat.
     state._freezeCamX = FOUNTAIN_X
     state._freezeCamY = FOUNTAIN_Y
+    local sfx = require "scripts.sound_effects"
+    if sfx.playWellCleansed then
+        sfx.playWellCleansed()
+    end
 end
 
 function flow.updateWin(state, dt)
@@ -196,14 +230,39 @@ function flow.updateWin(state, dt)
         flow.beginWinPresentation(state)
     end
     if state.winReady then
+        atmosphere.setWinFlash(0)
+        atmosphere.setCleanse(1)
         return
     end
     state.winTimer = (state.winTimer or 0) + dt
-    local t = math.min(1, state.winTimer / WIN_PRESENT_SECONDS)
-    atmosphere.setCleanse(t)
-    if state.winTimer >= WIN_PRESENT_SECONDS then
+    local t = state.winTimer
+    local flash, cleanse = 0, 0
+    if t < WIN_FLASH_END then
+        -- Stage A: hard white/warm flash peaking near-opaque, then easing out.
+        local u = t / WIN_FLASH_END
+        if u < 0.32 then
+            flash = (u / 0.32) ^ 0.65
+        else
+            local v = (u - 0.32) / 0.68
+            flash = 1.0 - 0.3 * (v * v)
+        end
+        cleanse = 0.15 * u
+    elseif t < WIN_DAYLIGHT_END then
+        -- Stage B: flash decays into strong daylight / recovery wash.
+        local u = (t - WIN_FLASH_END) / (WIN_DAYLIGHT_END - WIN_FLASH_END)
+        flash = 0.7 * ((1 - u) ^ 2.2)
+        cleanse = 0.15 + 0.85 * u
+    else
+        -- Stage C: full recovery; victory UI rides on top.
+        flash = 0
+        cleanse = 1
+    end
+    atmosphere.setWinFlash(flash)
+    atmosphere.setCleanse(cleanse)
+    if t >= WIN_PRESENT_SECONDS then
         state.winPresenting = false
         state.winReady = true
+        atmosphere.setWinFlash(0)
         atmosphere.setCleanse(1)
     end
 end
@@ -220,6 +279,9 @@ function flow.loadBackdrop(state)
     end
     atmosphere.load(state.nests)
     atmosphere.setCleanse(0)
+    if atmosphere.setWinFlash then
+        atmosphere.setWinFlash(0)
+    end
     collapse.load(state.gameMap, state.nests)
     if not cam then
         cam = camera(FOUNTAIN_X, FOUNTAIN_Y, zoom or 3)
@@ -245,7 +307,20 @@ end
 function flow.enterNarrative(state)
     ensureFonts(state)
     flow.loadBackdrop(state)
+    state.narrativeScroll = 0
+    state.narrativeMaxScroll = 0
     state.gameState = GAME_STATE.NARRATIVE
+end
+
+function flow.scrollNarrative(state, delta)
+    if state.gameState ~= GAME_STATE.NARRATIVE then
+        return
+    end
+    local maxScroll = state.narrativeMaxScroll or 0
+    state.narrativeScroll = math.max(
+        0,
+        math.min(maxScroll, (state.narrativeScroll or 0) + delta)
+    )
 end
 
 function flow.drawWorldBackdrop(state)
@@ -270,10 +345,10 @@ end
 function flow.drawTitle(state)
     local sw, sh = love.graphics.getDimensions()
     flow.drawWorldBackdrop(state)
-    local labelFont = state.hudLabelFont
+    local titleFont = state.hudLabelFont
     local helpFont = state.hudHelpFont
     flow.printfShadow(
-        labelFont,
+        titleFont,
         "Your time is your life.",
         0,
         sh * 0.36,
@@ -318,45 +393,87 @@ function flow.drawNarrative(state)
     local titleFont = state.hudLabelFont
     local body = state.hudBodyFont or state.hudHelpFont
     local footerFont = state.hudHelpFont
-    local pad = 36
-    local innerW = math.min(640, sw - 120)
-    local storyStep = lineStep(body)
-    local titleH = titleFont:getHeight() + 16
-    local storyH = #NARRATIVE_STORY * storyStep
-    local rulesH = #NARRATIVE_RULES * storyStep
-    local gap = 18
-    local footerH = footerFont:getHeight() + 8
-    local contentH = titleH + storyH + gap + rulesH + gap + footerH
-    local panelH = contentH + pad * 2 + 24
-    local panelW = innerW + pad * 2
+    local pad = 32
+    local panelW = math.min(560, sw - PANEL_MARGIN * 2)
+    local panelH = math.min(sh - PANEL_MARGIN * 2, sh * 0.88)
     local px = (sw - panelW) / 2
     local py = (sh - panelH) / 2
     drawParchment(px, py, panelW, panelH)
 
     local textW = panelW - pad * 2
     local textX = px + pad
-    local y = py + pad + 8
+    local storyStep = lineStep(body, 6)
+    local rulesStep = lineStep(body, 4)
+    local titleBlock = titleFont:getHeight() + 10
+    local footerH = footerFont:getHeight() + 8
+    local scrollHintH = footerFont:getHeight() + 4
 
-    drawInkText(titleFont, "Briefing", textX, y, textW, "center")
-    y = y + titleH
+    local contentH = #NARRATIVE_STORY * storyStep
+        + GAP
+        + #NARRATIVE_RULES * rulesStep
+    local viewTop = py + pad + titleBlock
+    local viewBottom = py + panelH - pad - footerH - scrollHintH - 4
+    local viewH = math.max(40, viewBottom - viewTop)
+    local maxScroll = math.max(0, contentH - viewH)
+    state.narrativeMaxScroll = maxScroll
+    state.narrativeScroll = math.max(
+        0,
+        math.min(maxScroll, state.narrativeScroll or 0)
+    )
+    local scroll = state.narrativeScroll
 
+    -- Fixed title (never clipped by scroll).
+    drawInkText(titleFont, "Briefing", textX, py + pad - 2, textW, "center")
+
+    love.graphics.setScissor(textX - 2, viewTop, textW + 4, viewH)
+    local y = viewTop - scroll
     for _, line in ipairs(NARRATIVE_STORY) do
         drawInkText(body, line, textX, y, textW, "center")
         y = y + storyStep
     end
-    y = y + gap
-
+    y = y + GAP * 0.35
     for _, line in ipairs(NARRATIVE_RULES) do
         drawInkText(body, line, textX, y, textW, "center")
-        y = y + storyStep
+        y = y + rulesStep
     end
-    y = y + gap
+    love.graphics.setScissor()
 
+    local footerY = py + panelH - pad - footerH
+    if maxScroll > 0 then
+        local hint = (scroll < maxScroll - 1)
+            and "Scroll  ·  mouse wheel / ↓ ↑"
+            or "Continue  ·  Enter / Space / click"
+        drawInkText(
+            footerFont,
+            hint,
+            textX,
+            footerY - scrollHintH,
+            textW,
+            "center"
+        )
+        -- Tiny scroll thumb.
+        local trackH = viewH
+        local thumbH = math.max(18, trackH * (viewH / (contentH + 1)))
+        local thumbT = (maxScroll > 0) and (scroll / maxScroll) or 0
+        local trackX = px + panelW - 18
+        love.graphics.setColor(0.35, 0.22, 0.12, 0.35)
+        love.graphics.rectangle("fill", trackX, viewTop, 3, trackH, 1, 1)
+        love.graphics.setColor(0.28, 0.16, 0.08, 0.7)
+        love.graphics.rectangle(
+            "fill",
+            trackX,
+            viewTop + (trackH - thumbH) * thumbT,
+            3,
+            thumbH,
+            1,
+            1
+        )
+    end
     drawInkText(
         footerFont,
         "Continue  ·  Enter / Space / click",
         textX,
-        y,
+        footerY,
         textW,
         "center"
     )
@@ -367,20 +484,21 @@ function flow.drawPause(state)
     local sw, sh = love.graphics.getDimensions()
     love.graphics.setColor(0, 0, 0, 0.62)
     love.graphics.rectangle("fill", 0, 0, sw, sh)
-    local body = state.hudBodyFont or state.hudHelpFont
-    local titleFont = state.hudLabelFont
+    local body = state.hudBodyFont or state.hudSubtitleFont
+    local titleFont = state.hudTitleFont or state.hudLabelFont
     local lines = {
         "Resume   ·  Esc",
         "Restart  ·  R",
         "Quit     ·  Q",
     }
-    local step = lineStep(body)
-    local panelW, panelH = 440, 56 + titleFont:getHeight() + #lines * step + 40
-    local px, py = (sw - panelW) / 2, (sh - panelH) / 2
+    local step = lineStep(body, 8)
+    local wantW = 420
+    local wantH = 48 + titleFont:getHeight() + GAP + #lines * step + 36
+    local px, py, panelW, panelH = fitPanel(sw, sh, wantW, wantH)
     drawParchment(px, py, panelW, panelH)
-    local y = py + 36
+    local y = py + 32
     drawInkText(titleFont, "Paused", px + 24, y, panelW - 48, "center")
-    y = y + titleFont:getHeight() + 20
+    y = y + titleFont:getHeight() + GAP
     for _, line in ipairs(lines) do
         drawInkText(body, line, px + 24, y, panelW - 48, "center")
         y = y + step
@@ -388,87 +506,152 @@ function flow.drawPause(state)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+local function blockHeight(font, text, limit)
+    local _, lines = font:getWrap(text, limit)
+    return math.max(1, #lines) * font:getHeight()
+end
+
 function flow.drawVictory(state)
     local sw, sh = love.graphics.getDimensions()
-    local titleFont = state.hudTimerFont
-    local labelFont = state.hudLabelFont
+    -- Title uses mid display size — timer font (80) wraps and collides with body.
+    local titleFont = state.hudTitleFont or state.hudLabelFont or state.hudTimerFont
     local body = state.hudBodyFont or state.hudHelpFont
-    local footerFont = state.hudHelpFont
-    local lines = {
-        "Time remaining  " .. (state.countdown and state.countdown:format() or "0"),
-        "The infection is broken.",
-        "The courtyard breathes again.",
+    local footerFont = state.hudHelpFont or body
+    local timeLeft = state.countdown and state.countdown:format() or "0:00"
+
+    love.graphics.setColor(0.05, 0.08, 0.04, 0.35)
+    love.graphics.rectangle("fill", 0, 0, sw, sh * 0.18)
+    love.graphics.rectangle("fill", 0, sh * 0.78, sw, sh * 0.22)
+    love.graphics.setColor(0.08, 0.1, 0.06, 0.22)
+    love.graphics.rectangle("fill", 0, 0, sw * 0.12, sh)
+    love.graphics.rectangle("fill", sw * 0.88, 0, sw * 0.12, sh)
+
+    local titleLines = {
+        "THE WELL IS",
+        "CLEANSED",
     }
-    local step = lineStep(body)
-    local panelW = 660
-    local panelH = 48
-        + titleFont:getHeight()
-        + 12
-        + labelFont:getHeight()
-        + 8
-        + #lines * step
-        + footerFont:getHeight()
-        + 36
-    local px, py = (sw - panelW) / 2, (sh - panelH) / 2 - 10
-    drawParchment(px, py, panelW, panelH)
-    local y = py + 28
-    drawInkText(titleFont, "THE WELL IS CLEANSED", px + 20, y, panelW - 40, "center")
-    y = y + titleFont:getHeight() + 10
-    for _, line in ipairs(lines) do
-        drawInkText(body, line, px + 24, y, panelW - 48, "center")
-        y = y + step
+    local bodyLines = {
+        "Time remaining  " .. timeLeft,
+        "The infection is broken. The courtyard breathes again.",
+    }
+    local footer = "R  Descend Again     Esc  Quit"
+    local pad = 28
+    local gapTitle = 18
+    local gapBody = 10
+    local gapFooter = 20
+    local panelW = math.min(640, sw - PANEL_MARGIN * 2)
+    local textW = panelW - pad * 2
+    local contentH = 0
+    for _, line in ipairs(titleLines) do
+        contentH = contentH + blockHeight(titleFont, line, textW)
     end
-    y = y + 10
-    drawInkText(
+    contentH = contentH + gapTitle
+    for _, line in ipairs(bodyLines) do
+        contentH = contentH + blockHeight(body, line, textW) + gapBody
+    end
+    contentH = contentH + gapFooter + blockHeight(footerFont, footer, textW)
+    local panelH = contentH + pad * 2
+    local px, py
+    px, py, panelW, panelH = fitPanel(sw, sh, panelW, panelH)
+    textW = panelW - pad * 2
+
+    love.graphics.setColor(0.06, 0.08, 0.05, 0.55)
+    love.graphics.rectangle("fill", px, py, panelW, panelH, 8, 8)
+    love.graphics.setColor(0.95, 0.97, 0.88, 0.18)
+    love.graphics.rectangle("fill", px, py, panelW, panelH, 8, 8)
+    love.graphics.setColor(1, 1, 1, 0.14)
+    love.graphics.rectangle("line", px + 1, py + 1, panelW - 2, panelH - 2, 8, 8)
+
+    local y = py + pad
+    for _, line in ipairs(titleLines) do
+        flow.printfShadow(
+            titleFont,
+            line,
+            px + pad,
+            y,
+            textW,
+            "center",
+            0.12,
+            0.18,
+            0.1,
+            1
+        )
+        y = y + blockHeight(titleFont, line, textW)
+    end
+    y = y + gapTitle
+    for i, line in ipairs(bodyLines) do
+        flow.printfShadow(
+            body,
+            line,
+            px + pad,
+            y,
+            textW,
+            "center",
+            0.2,
+            0.28,
+            0.14,
+            0.95
+        )
+        y = y + blockHeight(body, line, textW)
+        if i < #bodyLines then
+            y = y + gapBody
+        end
+    end
+    y = y + gapFooter
+    flow.printfShadow(
         footerFont,
-        "R  Descend Again     Esc  Quit",
-        px + 20,
+        footer,
+        px + pad,
         y,
-        panelW - 40,
-        "center"
+        textW,
+        "center",
+        0.22,
+        0.28,
+        0.16,
+        0.85
     )
     love.graphics.setColor(1, 1, 1, 1)
 end
 
 function flow.drawExtract(state)
     local sw, sh = love.graphics.getDimensions()
-    local titleFont = state.hudTimerFont
+    local titleFont = state.hudTitleFont or state.hudLabelFont or state.hudTimerFont
     local body = state.hudBodyFont or state.hudHelpFont
-    local footerFont = state.hudHelpFont
+    local footerFont = state.hudHelpFont or body
     local nestsMod = require "scripts.nests"
     local reason = state.extractReason == "abyss"
         and "You fell into the abyss."
         or "Plague tolerance exhausted."
     local lines = {
         reason,
-        string.format("Nests remaining: %d", nestsMod.remaining(state.nests)),
+        string.format(
+            "Potions + Well remaining: %d",
+            nestsMod.remaining(state.nests)
+        ),
     }
-    local step = lineStep(body)
-    local panelW = 640
-    local panelH = 48
-        + titleFont:getHeight()
-        + 16
-        + #lines * step
-        + footerFont:getHeight()
-        + 40
-    local px, py = (sw - panelW) / 2, (sh - panelH) / 2
-    drawParchment(px, py, panelW, panelH)
-    local y = py + 28
-    drawInkText(titleFont, "EXTRACTED", px + 20, y, panelW - 40, "center")
-    y = y + titleFont:getHeight() + 14
+    local footer = "R  Descend Again     Esc  Quit"
+    local pad = 28
+    local gap = 14
+    local wantW = 560
+    local textW = wantW - pad * 2
+    local contentH = blockHeight(titleFont, "EXTRACTED", textW) + gap
     for _, line in ipairs(lines) do
-        drawInkText(body, line, px + 24, y, panelW - 48, "center")
-        y = y + step
+        contentH = contentH + blockHeight(body, line, textW) + 8
     end
-    y = y + 12
-    drawInkText(
-        footerFont,
-        "R  Descend Again     Esc  Quit",
-        px + 20,
-        y,
-        panelW - 40,
-        "center"
-    )
+    contentH = contentH + gap + blockHeight(footerFont, footer, textW)
+    local wantH = contentH + pad * 2
+    local px, py, panelW, panelH = fitPanel(sw, sh, wantW, wantH)
+    textW = panelW - pad * 2
+    drawParchment(px, py, panelW, panelH)
+    local y = py + pad
+    drawInkText(titleFont, "EXTRACTED", px + pad, y, textW, "center")
+    y = y + blockHeight(titleFont, "EXTRACTED", textW) + gap
+    for _, line in ipairs(lines) do
+        drawInkText(body, line, px + pad, y, textW, "center")
+        y = y + blockHeight(body, line, textW) + 8
+    end
+    y = y + gap * 0.5
+    drawInkText(footerFont, footer, px + pad, y, textW, "center")
     love.graphics.setColor(1, 1, 1, 1)
 end
 

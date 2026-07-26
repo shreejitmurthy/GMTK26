@@ -92,12 +92,13 @@ local function buildFloor()
     return data
 end
 
---- Ash Market: restrained soot clusters, heavier near the nest and west wall.
+--- Ash Market: restrained soot clusters, heavier near the SW nest and west wall.
 local function buildDecalsA()
     local data = blank()
     for row = 2, MAP_H - 3 do
         for col = 1, 10 do
-            local nearNest = math.abs(col - 4.5) + math.abs(row - 14.5) <= 5
+            -- Nest A sits SW at ~col 3–4, row 16–17.
+            local nearNest = math.abs(col - 3.5) + math.abs(row - 16.5) <= 5
             local boundaryDecay = col <= 2 or row >= 20
             local modulus = (nearNest or boundaryDecay) and 5 or 9
             -- Soot only — dark floor chips read as fake walls on busy cobble.
@@ -115,7 +116,7 @@ local function buildDecalsA()
     return data
 end
 
---- Plague Well: broken wet ring and drainage marks around an open arena.
+--- Plague Well wet ring (landmark) + SE Drain Court nest stains.
 local function buildDecalsB()
     local data = blank()
     local cx, cy = 15, 12
@@ -133,19 +134,28 @@ local function buildDecalsB()
             end
         end
     end
-    -- Drainage run to the south-east, intentionally non-solid.
+    -- Drainage run toward SE Drain Court nest (~col 21–22, row 18–19).
     for row = 15, 20, 2 do
         put(data, 18, row, T.grate)
+    end
+    for row = 17, 21 do
+        for col = 19, 24 do
+            local nearDrain = math.abs(col - 21.5) + math.abs(row - 18.5) <= 4
+            if nearDrain and ((col + row) % 3) == 0 then
+                put(data, col, row, pick(T.floorWet, col, row))
+            end
+        end
     end
     return data
 end
 
---- Watch Yard: straight drainage/soot lines and decay concentrated at defenses.
+--- Watch Yard: straight drainage/soot lines; scorched ring around NE warning pyre.
 local function buildDecalsC()
     local data = blank()
     for row = 2, 21 do
         for col = 20, 28 do
-            local nearNest = math.abs(col - 24.5) + math.abs(row - 12.5) <= 5
+            -- Nest C sits NE at ~col 25–26, row 5–6.
+            local nearNest = math.abs(col - 25.5) + math.abs(row - 5.5) <= 5
             local atBoundary = col >= 27 or row <= 3
             if (nearNest or atBoundary) and ((col * 3 + row * 5) % 7) == 0 then
                 put(data, col, row, pick(T.floorSoot, col, row))
@@ -180,15 +190,17 @@ end
 local function buildProps()
     local data = blank()
 
-    -- Ash Market: three intentional solid clusters with broad lanes between.
+    -- Ash Market: northern stall ruin + SW ash-heap nest site (walkable center).
     local market = {
-        -- Burned stall shell.
+        -- Burned stall shell (north landmark).
         { 2, 6, T.ruin[1] }, { 3, 6, T.ruin[2] },
         { 4, 6, T.ruin[3] }, { 5, 6, T.ruin[4] },
-        -- Abandoned cart/load west of the nest.
+        -- Mid-west abandoned load (approach cue toward SW nest).
         { 2, 12, T.chest }, { 3, 12, T.barrel },
-        -- Broken southern stockpile.
-        { 6, 18, T.crateLow }, { 7, 18, T.barrel },
+        -- Nest A ash heap — crates/ruins ring the site; center stays open.
+        { 2, 15, T.crateLow }, { 5, 15, T.barrel },
+        { 1, 17, T.ruin[1] }, { 5, 17, T.crateLow },
+        { 2, 18, T.barrel }, { 3, 18, T.crateLow }, { 4, 18, T.ruin[3] },
     }
     for _, p in ipairs(market) do
         put(data, p[1], p[2], p[3])
@@ -200,11 +212,17 @@ local function buildProps()
     put(data, 11, 16, T.torch)
     put(data, 18, 16, T.torch)
 
-    -- Watch Yard: straight defensive lines, visibly broken and still traversable.
+    -- Watch Yard: gate posts + NE warning-pyre nest + southern supply.
     put(data, 21, 4, T.pillar)
     put(data, 28, 4, T.pillar)
     put(data, 22, 5, T.torch)
     put(data, 27, 5, T.torch)
+    -- Nest C pyre shrine (NE) — frame the open channel pad; do not cover its center.
+    put(data, 24, 4, T.torch)
+    put(data, 26, 4, T.torch)
+    put(data, 25, 3, T.pillar)
+    put(data, 24, 7, T.crateLow)
+    put(data, 26, 7, T.barrel)
     for col = 23, 25 do
         put(data, col, 9, T.barricade)
     end
@@ -212,9 +230,15 @@ local function buildProps()
         put(data, 27, row, T.pillar)
     end
     put(data, 26, 10, T.torch)
-    put(data, 22, 18, T.torch)
     put(data, 22, 17, T.crateLow)
     put(data, 23, 17, T.barrel)
+
+    -- Drain Court (SE district nest) — wet ruin ring; center pad stays open.
+    put(data, 20, 18, T.barrel)
+    put(data, 23, 18, T.crateLow)
+    put(data, 20, 20, T.ruin[2])
+    put(data, 23, 20, T.ruin[4])
+    put(data, 24, 19, T.torch)
 
     return data
 end
@@ -254,12 +278,26 @@ local function buildRectangleColliders(startId)
     -- Every rectangle corresponds to the complete visible prop cluster above.
     add("market_burned_stall", 2, 6, 4, 1)
     add("market_abandoned_load", 2, 12, 2, 1)
-    add("market_stockpile", 6, 18, 2, 1)
+    -- Ash-heap ring (does not cover nest center pad).
+    add("market_ash_crate_n", 2, 15, 1, 1)
+    add("market_ash_barrel_n", 5, 15, 1, 1)
+    add("market_ash_ruin_w", 1, 17, 1, 1)
+    add("market_ash_crate_e", 5, 17, 1, 1)
+    add("market_ash_heap_s", 2, 18, 3, 1)
     add("watch_gate_post_w", 21, 4, 1, 1)
     add("watch_gate_post_e", 28, 4, 1, 1)
+    add("watch_pyre_post", 25, 3, 1, 1)
+    add("watch_pyre_torch_w", 24, 4, 1, 1)
+    add("watch_pyre_torch_e", 26, 4, 1, 1)
+    add("watch_pyre_crate_w", 24, 7, 1, 1)
+    add("watch_pyre_crate_e", 26, 7, 1, 1)
     add("watch_barricade_n", 23, 9, 3, 1)
     add("watch_barricade_e", 27, 12, 1, 3)
     add("watch_supply", 22, 17, 2, 1)
+    add("drain_barrel_w", 20, 18, 1, 1)
+    add("drain_crate_e", 23, 18, 1, 1)
+    add("drain_ruin_sw", 20, 20, 1, 1)
+    add("drain_ruin_se", 23, 20, 1, 1)
 
     return objects, id
 end
@@ -280,17 +318,24 @@ local function buildSpawns(startId)
         id = id + 1
     end
 
-    add("nest_a", 4, 14, 2, 2, { nest = "a", cleanseRadius = 36, district = "Ash Market" })
-    add("nest_b", 14, 11, 2, 2, { nest = "b", cleanseRadius = 36, district = "Plague Well" })
-    add("nest_c", 24, 12, 2, 2, { nest = "c", cleanseRadius = 40, district = "Watch Yard" })
+    -- 3 district nests scattered (SW / NE / SE) + locked Plague Well on the fountain.
+    add("nest_a", 3, 16, 2, 2, { nest = "a", cleanseRadius = 36, district = "Ash Market" })
+    add("nest_b", 21, 18, 2, 2, { nest = "b", cleanseRadius = 36, district = "Ossuary" })
+    add("nest_c", 25, 5, 2, 2, { nest = "c", cleanseRadius = 40, district = "Watch Yard" })
+    add("nest_well", 14, 11, 2, 2, {
+        nest = "well",
+        cleanseRadius = 40,
+        district = "Plague Well",
+        lockedUntilDistricts = true,
+    })
 
     add("player_start", 14, 20, 1, 1, {})
 
-    add("spawn_chaser_a", 3, 9, 1, 1, { type = "chaser", nest = "a" })
-    add("spawn_fleer_a", 9, 17, 1, 1, { type = "fleer", nest = "a" })
-    add("spawn_keeper_b", 12, 6, 1, 1, { type = "keeper", nest = "b" })
-    add("spawn_chaser_b", 18, 15, 1, 1, { type = "chaser", nest = "b" })
-    add("spawn_ranger_c", 25, 7, 1, 1, { type = "ranger", nest = "c" })
+    add("spawn_chaser_a", 3, 13, 1, 1, { type = "chaser", nest = "a" })
+    add("spawn_fleer_a", 7, 19, 1, 1, { type = "fleer", nest = "a" })
+    add("spawn_keeper_b", 18, 16, 1, 1, { type = "keeper", nest = "b" })
+    add("spawn_chaser_b", 24, 19, 1, 1, { type = "chaser", nest = "b" })
+    add("spawn_ranger_c", 22, 6, 1, 1, { type = "ranger", nest = "c" })
 
     return objects, id
 end
@@ -384,14 +429,15 @@ function M.patch(map)
     map.properties = {
         sector = "infested_courtyard",
         nestA = "Ash Market",
-        nestB = "Plague Well",
+        nestB = "Ossuary",
         nestC = "Watch Yard",
+        nestWell = "Plague Well",
         playableX = TILE,
         playableY = TILE,
         playableW = (MAP_W - 2) * TILE,
         playableH = (MAP_H - 2) * TILE,
         wallThickness = TILE,
-        tilesetNote = "One cobble court; district identity comes from restrained decay, clustered props, and visible architecture.",
+        tilesetNote = "One cobble court; seal 3 district nests, then cleanse the locked Plague Well fountain.",
     }
 
     -- Two existing prop/fountain sheets plus one credited cobblestone sheet.

@@ -370,14 +370,18 @@ local function completeSpawn(entry, state)
 end
 
 --- Index authored Spawns by nest id and arm pressure timers.
+--- Pressure runs on the 3 districts; well pressure arms only after unlock.
 function encounter_director.load(state, spawnData)
-    spawnByNest = { a = {}, b = {}, c = {} }
+    spawnByNest = { a = {}, b = {}, c = {}, well = {} }
     pending = {}
     pressure = {}
     loaded = true
 
     for _, point in ipairs((spawnData and spawnData.enemies) or {}) do
         local nestId = point.nest
+        if nestId == "d" then
+            nestId = "well"
+        end
         if nestId and spawnByNest[nestId] then
             spawnByNest[nestId][#spawnByNest[nestId] + 1] = {
                 x = point.x,
@@ -401,11 +405,12 @@ function encounter_director.load(state, spawnData)
     end
 
     print(string.format(
-        "[encounter] director ready (cap %d, authored a=%d b=%d c=%d)",
+        "[encounter] director ready (cap %d, authored a=%d b=%d c=%d well=%d)",
         TUNING.MAX_ACTIVE,
         #spawnByNest.a,
         #spawnByNest.b,
-        #spawnByNest.c
+        #spawnByNest.c,
+        #spawnByNest.well
     ))
 end
 
@@ -432,6 +437,12 @@ function encounter_director.onNestCleansed(nest)
             table.remove(pending, i)
         end
     end
+end
+
+--- Finale: unlocked well pulses faster pressure around the fountain.
+function encounter_director.onWellUnlocked(state)
+    pressure.well = 2.5
+    print("[encounter] well finale pressure armed")
 end
 
 function encounter_director.update(state, dt)
@@ -466,26 +477,30 @@ function encounter_director.update(state, dt)
     end
 
     -- At most one new telegraph per frame (no same-frame multi-spawns).
+    -- District nests always; well only after unlock (locked well = no pressure).
     local spawnedThisFrame = false
     for _, nest in ipairs(state.nests or {}) do
-        if nest.cleansed then
-            pressure[nest.id] = nil
+        local isWell = nestsMod.isWell(nest)
+        if nest.cleansed or (isWell and nest.locked) then
+            if nest.cleansed then
+                pressure[nest.id] = nil
+            end
         else
             local t = pressure[nest.id]
             if t == nil then
-                t = TUNING.PRESSURE_INTERVAL
+                t = isWell and 2.5 or TUNING.PRESSURE_INTERVAL
                 pressure[nest.id] = t
             end
             t = t - dt
             if t <= 0 then
                 if spawnedThisFrame then
-                    -- Keep ready; try again next frame so pressure does not clump.
                     pressure[nest.id] = 0
                 elseif countActive(state) >= TUNING.MAX_ACTIVE then
                     pressure[nest.id] = TUNING.PRESSURE_RETRY
                 elseif beginTelegraph(nest.id, state) then
-                    pressure[nest.id] = TUNING.PRESSURE_INTERVAL
-                        + (love.math.random() * 2.0 - 0.5) -- ~11–13s
+                    local interval = isWell and 7.0 or TUNING.PRESSURE_INTERVAL
+                    pressure[nest.id] = interval
+                        + (love.math.random() * 2.0 - 0.5)
                     spawnedThisFrame = true
                 else
                     pressure[nest.id] = TUNING.PRESSURE_RETRY

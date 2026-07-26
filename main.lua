@@ -32,6 +32,92 @@ DEBUG = false
 
 love.graphics.setDefaultFilter("nearest", "nearest")
 
+--- Cached DCSS potion tiles for a compact top HUD (~22px tall).
+local hudVialImages = {}
+local HUD_PAD = 8
+local HUD_GAP = 8
+local HUD_VIAL_SCALE = 0.7 -- 32px tile → ~22px; timer stays the hero
+
+local function ensureHudVials()
+    if next(hudVialImages) then
+        return
+    end
+    local files = {
+        a = "res/images/nests/vial_a.png",
+        b = "res/images/nests/vial_b.png",
+        c = "res/images/nests/vial_c.png",
+        well = "res/images/nests/vial_well.png",
+        empty = "res/images/nests/vial_empty.png",
+    }
+    for key, path in pairs(files) do
+        local ok, img = pcall(love.graphics.newImage, path)
+        if ok and img then
+            img:setFilter("nearest", "nearest")
+            hudVialImages[key] = img
+        end
+    end
+end
+
+local function drawHudVial(id, x, y, scale, nest)
+    local live = nest and not nest.cleansed
+    local locked = live and nest.locked
+    local open = live and nest.isWell and not nest.locked
+    local img = live and hudVialImages[id] or hudVialImages.empty
+    if not img and live then
+        img = hudVialImages.a
+    end
+    local col = nests.color(id)
+    if img then
+        local iw, ih = img:getWidth(), img:getHeight()
+        if locked then
+            love.graphics.setColor(0.7, 0.7, 0.74, 0.95)
+        elseif open then
+            local pulse = 0.85 + 0.15 * math.abs(math.sin(love.timer.getTime() * 3.5))
+            love.graphics.setColor(1, 1, 1, pulse)
+        elseif live then
+            love.graphics.setColor(1, 1, 1, 1)
+        else
+            love.graphics.setColor(0.86, 0.86, 0.8, 0.88)
+        end
+        love.graphics.draw(img, x, y, 0, scale, scale, iw * 0.5, ih * 0.55)
+    else
+        love.graphics.setColor(col[1], col[2], col[3], live and 0.9 or 0.35)
+        love.graphics.circle(live and "fill" or "line", x, y, 7)
+    end
+    if locked then
+        local prev = love.graphics.getLineWidth()
+        love.graphics.setLineWidth(1.4)
+        local half = 9 * scale
+        love.graphics.setColor(0.72, 0.6, 0.32, 0.9)
+        love.graphics.rectangle("line", x - half, y - half - 1, half * 2, half * 2 + 2)
+        love.graphics.line(x - half * 0.5, y - half, x - half * 0.5, y + half)
+        love.graphics.line(x + half * 0.5, y - half, x + half * 0.5, y + half)
+        love.graphics.line(x - half * 0.7, y, x + half * 0.7, y)
+        love.graphics.setLineWidth(prev)
+    elseif not live then
+        local prev = love.graphics.getLineWidth()
+        love.graphics.setLineWidth(1.6)
+        love.graphics.setColor(0.55, 0.75, 0.45, 0.85)
+        love.graphics.line(x - 4, y + 1, x - 1, y + 4, x + 5, y - 4)
+        love.graphics.setLineWidth(prev)
+    elseif nest and nest.channeling and nest.progress and nest.progress > 0 then
+        local prev = love.graphics.getLineWidth()
+        love.graphics.setLineWidth(1.5)
+        love.graphics.setColor(col[1], col[2], col[3], 0.85)
+        love.graphics.arc(
+            "line",
+            "open",
+            x,
+            y,
+            10 * scale,
+            -math.pi / 2,
+            -math.pi / 2 + nest.progress * math.pi * 2,
+            16
+        )
+        love.graphics.setLineWidth(prev)
+    end
+end
+
 GAME_STATE = {
     TITLE = 0,
     NARRATIVE = 1,
@@ -50,6 +136,7 @@ state = {
     floats = {},
     hintTime = 4,
     hudTimerFont = nil,
+    hudTitleFont = nil,
     hudLabelFont = nil,
     hudHelpFont = nil,
     hudBodyFont = nil,
@@ -143,14 +230,38 @@ end
 
 function state:onNestCleansed(nest)
     local col = nests.color(nest.id)
-    self:pushFloat("NEST SEALED", nest.x, nest.y - 18, col[1], col[2], col[3], 1.1)
+    local label = nests.isWell(nest) and "WELL CLEANSED" or "POTION COLLECTED"
+    local fx, fy = nest.x, nest.y
+    if nests.isWell(nest) then
+        fx, fy = 15 * 16, 12 * 16
+    end
+    self:pushFloat(label, fx, fy - 18, col[1], col[2], col[3], 1.1)
     atmosphere.notifyNestCleansed(nest)
     encounter_director.onNestCleansed(nest)
-    print(string.format(
-        "[nest] nest_%s sealed (%d/3)",
-        nest.id,
-        nests.countCleansed(self.nests)
-    ))
+    if nests.isWell(nest) then
+        print(string.format(
+            "[nest] Plague Well cleansed — sector clear (%.0f seals)",
+            nests.countCleansed(self.nests)
+        ))
+    else
+        print(string.format(
+            "[nest] nest_%s sealed (districts %d/3)",
+            nest.id,
+            nests.countDistrictCleansed(self.nests)
+        ))
+    end
+end
+
+--- Fired when district nests hit 3/3 — unlocks the fountain well (not a win).
+function state:onWellUnlocked()
+    local fx, fy = 15 * 16, 12 * 16
+    self:pushFloat("THE WELL AWAKENS", fx, fy - 28, 0.45, 0.85, 0.4, 1.6)
+    atmosphere.notifyWellUnlocked()
+    if encounter_director.onWellUnlocked then
+        encounter_director.onWellUnlocked(self)
+    end
+    sound_effects.playWellUnlock()
+    print("[nest] THE WELL AWAKENS — Hold E at the fountain")
 end
 
 function state:onSectorCleared()
@@ -310,7 +421,8 @@ function state:update(dt)
             end
 
             if playerActor and cam then
-                cam:lookAt(playerActor.pos.x, playerActor.pos.y)
+                local sx, sy = atmosphere.getChannelShake()
+                cam:lookAt(playerActor.pos.x + sx, playerActor.pos.y + sy)
                 self._freezeCamX = nil
                 self._freezeCamY = nil
             end
@@ -424,8 +536,15 @@ function state:drawHud()
     local sh = love.graphics.getHeight()
     local prevFont = love.graphics.getFont()
 
-    -- Hero HUD: plague timer (health) top-center ΓÇö dominant readout.
-    if self.countdown then
+    -- Hero HUD: plague timer (health) top-center. Hidden once end cards take over.
+    local endCardUp = self.extracted
+        or (self.sectorCleared and self.winReady)
+        or (
+            self.sectorCleared
+            and self.winPresenting
+            and (self.winTimer or 0) >= 2.5
+        )
+    if self.countdown and not endCardUp then
         local ratio = self.countdown:getRatio()
         local dmgPulse, dmgAmount = self.countdown:getDamagePulse()
 
@@ -455,17 +574,20 @@ function state:drawHud()
         end
 
         local timerFont = self.hudTimerFont or prevFont
-        local labelFont = self.hudLabelFont or prevFont
+        local labelFont = self.hudSmallFont or self.hudHelpFont or prevFont
         love.graphics.setFont(timerFont)
 
         local text = self.countdown:format()
         local tw = timerFont:getWidth(text)
         local th = timerFont:getHeight()
         local cx = sw / 2
-        local cy = 22
+        -- Italianno getHeight() is taller than the visible glyphs; stack with
+        -- measured cursors so labels / plate / hints never collide.
+        local timerY = 14
+        local stackY = timerY + th * 0.58
 
         love.graphics.push()
-        love.graphics.translate(cx, cy)
+        love.graphics.translate(cx, timerY)
         love.graphics.scale(scale, scale)
         love.graphics.setColor(0, 0, 0, 0.5 * a)
         love.graphics.print(text, -tw / 2 + 2, 2)
@@ -473,11 +595,10 @@ function state:drawHud()
         love.graphics.print(text, -tw / 2, 0)
         love.graphics.pop()
 
-        -- Fuse track: same resource as the clock (width = getRatio()), not a heart bar.
-        local fuseW = 220
-        local fuseH = 5
+        local fuseW = 200
+        local fuseH = 4
         local fuseX = cx - fuseW / 2
-        local fuseY = cy + th * 0.92
+        local fuseY = stackY
         local filled = fuseW * ratio
         love.graphics.setColor(0, 0, 0, 0.45)
         love.graphics.rectangle("fill", fuseX - 1, fuseY - 1, fuseW + 2, fuseH + 2)
@@ -487,7 +608,6 @@ function state:drawHud()
             love.graphics.setColor(r, g, b, 0.9 * a)
             love.graphics.rectangle("fill", fuseX, fuseY, filled, fuseH)
         end
-        -- Segment ticks ΓåÆ timer/fuse metaphor (not a solid HP chunk bar).
         local segments = 6
         love.graphics.setColor(0.12, 0.08, 0.06, 0.55)
         for i = 1, segments - 1 do
@@ -495,82 +615,122 @@ function state:drawHud()
             love.graphics.rectangle("fill", tx, fuseY - 1, 1, fuseH + 2)
         end
 
-        love.graphics.setFont(labelFont)
-        -- Title case reads cleaner in roundhand than all-caps.
+        stackY = fuseY + fuseH + 6
         local label = "Plague Tolerance"
         local lw = labelFont:getWidth(label)
+        local labelH = labelFont:getHeight()
         game_flow.printShadow(
             labelFont,
             label,
             cx - lw / 2,
-            fuseY + fuseH + 4,
+            stackY,
             r,
             g,
             b,
-            0.9 * a
+            0.88 * a
         )
+        stackY = stackY + labelH * 0.72 + HUD_GAP
 
-        -- Floating damage / heal readout near the timer.
         if dmgPulse > 0 and dmgAmount > 0 then
-            love.graphics.setFont(labelFont)
             local floatText = string.format("-%.0fs", dmgAmount)
             local rise = (1 - dmgPulse) * 18
+            love.graphics.setFont(labelFont)
             love.graphics.setColor(1, 0.35, 0.28, dmgPulse)
-            love.graphics.print(floatText, cx + tw * 0.42 * scale, cy + 4 - rise)
+            love.graphics.print(
+                floatText,
+                cx + tw * 0.42 * scale,
+                timerY + 4 - rise
+            )
         end
         local healPulse, healAmount = self.countdown:getHealPulse()
         if healPulse > 0 and healAmount > 0 then
-            love.graphics.setFont(labelFont)
             local floatText = string.format("+%.0fs", healAmount)
             local rise = (1 - healPulse) * 18
+            love.graphics.setFont(labelFont)
             love.graphics.setColor(0.45, 0.95, 0.55, healPulse)
-            love.graphics.print(floatText, cx - tw * 0.55 * scale, cy + 4 - rise)
+            love.graphics.print(
+                floatText,
+                cx - tw * 0.55 * scale,
+                timerY + 4 - rise
+            )
         end
 
-        -- Nest cleanse pips under Plague Tolerance.
-        local nestY = fuseY + fuseH + 32
-        local cleansedCount = nests.countCleansed(self.nests)
-        local nestLabel = string.format("NESTS %d/3", cleansedCount)
-        local nlw = labelFont:getWidth(nestLabel)
-        game_flow.printShadow(
-            labelFont,
-            nestLabel,
-            cx - nlw / 2,
-            nestY,
-            0.95,
-            0.9,
-            0.78,
-            0.95
-        )
+        -- Hide objective strip on end screens (victory / extract own the frame).
+        local showObjectives = not self.extracted and not self.sectorCleared
+        if showObjectives then
+            ensureHudVials()
+            local districtCount = nests.countDistrictCleansed(self.nests)
+            local well = nests.getWell(self.nests)
+            local wellState = "Locked"
+            if well and well.cleansed then
+                wellState = "Cleansed"
+            elseif well and not well.locked then
+                wellState = "Ready"
+            end
+            local potionsLine = string.format("Potions  %d/3", districtCount)
+            local wellLine = "Well  " .. wellState
+            local statusGap = 20
+            local statusW = labelFont:getWidth(potionsLine)
+                + statusGap
+                + labelFont:getWidth(wellLine)
+            local vialIds = { "a", "b", "c", "well" }
+            local vialPitch = 26
+            local vialRowW = vialPitch * (#vialIds - 1)
+            local plateInnerW = math.max(statusW, vialRowW)
+            local plateW = plateInnerW + HUD_PAD * 4
+            local vialH = 32 * HUD_VIAL_SCALE
+            -- Full line metrics so script glyphs + vials sit inside the plate.
+            local plateH = HUD_PAD
+                + labelH
+                + HUD_GAP
+                + vialH
+                + HUD_PAD
+            local plateX = cx - plateW / 2
+            local plateY = stackY
+            game_flow.drawHudPlate(plateX, plateY, plateW, plateH, 0.55)
 
-        local pipR = 7
-        local pipGap = 22
-        local pipStart = cx - pipGap
-        for i, id in ipairs(nests.order()) do
-            local nest = self.nests and self.nests[i]
-            local col = nests.color(id)
-            local px = pipStart + (i - 1) * pipGap
-            local py = nestY + 28
-            if nest and nest.cleansed then
-                love.graphics.setColor(col[1], col[2], col[3], 0.95)
-                love.graphics.circle("fill", px, py, pipR)
-            else
-                love.graphics.setColor(col[1], col[2], col[3], 0.25)
-                love.graphics.circle("line", px, py, pipR)
-                if nest and nest.channeling and nest.progress > 0 then
-                    love.graphics.setColor(col[1], col[2], col[3], 0.7)
-                    love.graphics.arc(
-                        "fill",
-                        px,
-                        py,
-                        pipR - 1,
-                        -math.pi / 2,
-                        -math.pi / 2 + nest.progress * math.pi * 2,
-                        16
-                    )
+            local statusY = plateY + HUD_PAD
+            local statusX = cx - statusW / 2
+            game_flow.printShadow(
+                labelFont,
+                potionsLine,
+                statusX,
+                statusY,
+                0.95,
+                0.9,
+                0.78,
+                0.92
+            )
+            local wellCol = nests.color("well")
+            local wellAlpha = (wellState == "Cleansed" and 0.92)
+                or (wellState == "Ready" and 0.92)
+                or 0.65
+            game_flow.printShadow(
+                labelFont,
+                wellLine,
+                statusX + labelFont:getWidth(potionsLine) + statusGap,
+                statusY,
+                wellCol[1],
+                wellCol[2],
+                wellCol[3],
+                wellAlpha
+            )
+
+            local vialY = statusY + labelH + HUD_GAP * 0.35 + vialH * 0.35
+            local vialStartX = cx - vialRowW / 2
+            local nestById = {}
+            if self.nests then
+                for _, nest in ipairs(self.nests) do
+                    nestById[nest.id] = nest
                 end
             end
+            for i, id in ipairs(vialIds) do
+                local px = vialStartX + (i - 1) * vialPitch
+                drawHudVial(id, px, vialY, HUD_VIAL_SCALE, nestById[id])
+            end
+            stackY = plateY + plateH + HUD_GAP + 4
         end
+        self._hudStackBottom = stackY
     end
 
     if self.hintTime and self.hintTime > 0
@@ -582,11 +742,23 @@ function state:drawHud()
         if self.hintTime > 3 then
             alpha = math.min(1, (4 - self.hintTime) / 0.5)
         end
+        local font = self.hudHelpFont or prevFont
+        local msg =
+            "Collect three potions, then cleanse the Well."
+        local tw = font:getWidth(msg)
+        local th = font:getHeight()
+        local bx = (sw - tw) / 2 - 14
+        -- Always below the measured HUD stack (never on top of Potions plate).
+        local by = math.max(
+            (self._hudStackBottom or (sh * 0.22)) + 4,
+            sh * 0.22
+        )
+        game_flow.drawHudPlate(bx, by - 2, tw + 28, th + 10, 0.55 * alpha)
         game_flow.printfShadow(
-            self.hudHelpFont or prevFont,
-            "Your time is your life — seal the three nests.",
+            font,
+            msg,
             0,
-            sh * 0.18,
+            by,
             sw,
             "center",
             0.96,
@@ -596,21 +768,22 @@ function state:drawHud()
         )
     end
 
-    -- Hold-E prompt only when standing in an uncleansed nest (not while walking past).
+    -- Cleanse / locked-well prompt when standing in an uncleansed site.
     local promptNest = nests.promptNest(self.nests)
+    local promptMsg = nests.promptText(self.nests)
     if promptNest
+        and promptMsg
         and not self.extracted
         and not self.sectorCleared
         and self.gameState == GAME_STATE.GAMEPLAY
     then
-        local msg = "Hold E to cleanse"
-        local font = self.hudSubtitleFont or self.hudHelpFont or prevFont
+        local msg = promptMsg
+        local font = self.hudHelpFont or prevFont
         local tw = font:getWidth(msg)
         local th = font:getHeight()
-        local bx = (sw - tw) / 2 - 18
+        local bx = (sw - tw) / 2 - 14
         local by = sh * 0.76
-        love.graphics.setColor(0.08, 0.06, 0.04, 0.72)
-        love.graphics.rectangle("fill", bx, by - 4, tw + 36, th + 14, 4, 4)
+        game_flow.drawHudPlate(bx, by - 2, tw + 28, th + 8, 0.6)
         game_flow.printfShadow(
             font,
             msg,
@@ -629,18 +802,15 @@ function state:drawHud()
     if subtitle then
         local font = self.hudHelpFont or prevFont
         local textWidth = font:getWidth(subtitle)
-        local boxWidth = math.min(sw - 48, textWidth + 48)
+        local boxWidth = math.min(sw - 48, textWidth + 36)
         local boxX = (sw - boxWidth) / 2
         local textY = sh - font:getHeight() - 48
-        love.graphics.setColor(0.035, 0.025, 0.02, 0.72 * subtitleAlpha)
-        love.graphics.rectangle(
-            "fill",
+        game_flow.drawHudPlate(
             boxX,
-            textY - 7,
+            textY - 4,
             boxWidth,
-            font:getHeight() + 14,
-            4,
-            4
+            font:getHeight() + 10,
+            0.6 * subtitleAlpha
         )
         game_flow.printfShadow(
             font,
@@ -659,18 +829,10 @@ function state:drawHud()
     if self.sectorCleared and self.winReady then
         game_flow.drawVictory(self)
     elseif self.sectorCleared and self.winPresenting then
-        game_flow.printfShadow(
-            self.hudLabelFont or prevFont,
-            "The Plague Well is cleansing…",
-            0,
-            sh * 0.16,
-            sw,
-            "center",
-            0.85,
-            0.95,
-            0.78,
-            1
-        )
+        -- Stage C begins mid-presentation: show victory copy once daylight is up.
+        if (self.winTimer or 0) >= 2.5 then
+            game_flow.drawVictory(self)
+        end
     elseif self.extracted then
         game_flow.drawExtract(self)
     end
@@ -978,20 +1140,49 @@ function love.load(args)
         startFromNarrative()
         check("Continue starts GAMEPLAY", state.gameState == GAME_STATE.GAMEPLAY)
         check("run has countdown", state.countdown ~= nil)
+        check("3 districts + well loaded", state.nests and #state.nests == 4)
+        local well = nests.getWell(state.nests)
+        check("well locked at start", well ~= nil and well.locked == true)
+        check("not win before seals", not nests.allCleansed(state.nests))
+        for _, nest in ipairs(state.nests) do
+            if not nests.isWell(nest) then
+                nest.cleansed = true
+            end
+        end
+        check("districts 3/3 unlocks well", nests.wellUnlocked(state.nests))
+        check("never win at district 3/3 alone", not nests.allCleansed(state.nests))
+        well.cleansed = true
+        well.locked = false
+        check("well cleanse is the win condition", nests.allCleansed(state.nests))
+        -- Reset nest flags before win-presentation smoke (which sets sectorCleared).
+        for _, nest in ipairs(state.nests) do
+            nest.cleansed = false
+            nest.locked = nests.isWell(nest)
+        end
         state.sectorCleared = true
         state:onSectorCleared()
-        for _ = 1, 200 do
+        for _ = 1, 400 do
             game_flow.updateWin(state, 1 / 60)
         end
         check("win presentation reaches victory", state.winReady == true)
         check("cleanse amount is full", atmosphere.getCleanse() >= 0.99)
+        check(
+            "win flash cleared after beat",
+            (atmosphere.getWinFlash and atmosphere.getWinFlash() or 0) <= 0.01
+        )
         for i = 1, 3 do
             state:prepareRestart()
             check(
                 "restart " .. i .. " clears win tint",
                 atmosphere.getCleanse() == 0
+                    and (atmosphere.getWinFlash and atmosphere.getWinFlash() or 0) <= 0.01
                     and state.winReady == false
                     and state.sectorCleared == false
+            )
+            local wellAfter = nests.getWell(state.nests)
+            check(
+                "restart " .. i .. " relocks well",
+                wellAfter ~= nil and wellAfter.locked == true and not wellAfter.cleansed
             )
         end
         state.extracted = true
@@ -1116,7 +1307,9 @@ function love.draw()
             encounter_director.drawWorld()
         end
         enemy_attacks.drawAll(state.actors)
-        if state.hudLabelFont then
+        if state.hudHelpFont then
+            love.graphics.setFont(state.hudHelpFont)
+        elseif state.hudLabelFont then
             love.graphics.setFont(state.hudLabelFont)
         end
         for _, f in ipairs(state.floats or {}) do
@@ -1133,7 +1326,17 @@ function love.draw()
     end
 
     atmosphere.drawGrade()
-    plague_senses.drawVignette(state.plagueSenseIntensity)
+    if not state.sectorCleared then
+        plague_senses.drawVignette(state.plagueSenseIntensity)
+    end
+    atmosphere.drawWinFlash()
+    if cam
+        and state.gameState == GAME_STATE.GAMEPLAY
+        and not state.extracted
+        and not state.sectorCleared
+    then
+        atmosphere.drawNestChevrons(cam, state.nests)
+    end
     state:drawHud()
 
     if state.gameState == GAME_STATE.PAUSE then
@@ -1189,6 +1392,10 @@ function love.keypressed(k)
     if state.gameState == GAME_STATE.NARRATIVE then
         if k == "escape" then
             game_flow.enterTitle(state)
+        elseif k == "down" or k == "s" or k == "pagedown" then
+            game_flow.scrollNarrative(state, 36)
+        elseif k == "up" or k == "w" or k == "pageup" then
+            game_flow.scrollNarrative(state, -36)
         elseif k == "return" or k == "kpenter" or k == "space" then
             startFromNarrative()
         end
@@ -1273,6 +1480,12 @@ function love.keypressed(k)
     end
 end
 
+function love.wheelmoved(_, y)
+    if state.gameState == GAME_STATE.NARRATIVE then
+        game_flow.scrollNarrative(state, -y * 28)
+    end
+end
+
 function love.mousepressed(x, y, button)
     if button ~= 1 then
         return
@@ -1282,6 +1495,12 @@ function love.mousepressed(x, y, button)
         return
     end
     if state.gameState == GAME_STATE.NARRATIVE then
+        -- Click continues only when fully scrolled (or no overflow).
+        local maxScroll = state.narrativeMaxScroll or 0
+        if maxScroll > 2 and (state.narrativeScroll or 0) < maxScroll - 2 then
+            game_flow.scrollNarrative(state, 48)
+            return
+        end
         startFromNarrative()
         return
     end

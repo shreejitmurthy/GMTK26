@@ -16,8 +16,8 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 - **Plague countdown** (`scripts/countdown.lua`): top-center timer is health (default **90s**) with a thin **Plague Tolerance** fuse. Enemy hits → `state:applyPlayerDamage` → `countdown:damage` (**5s** default, **0.6s** i-frames). **H** debug-damages **3s** (bypasses i-frames). Player sword hits do **not** drain your timer. At 0 → **EXTRACTED**
 - **Period HUD type:** `res/fonts/Italianno-Regular.ttf` (OFL) — copperplate / roundhand cursive for timer, labels, extract, help text
 - **F1** / backtick toggles collider debug draw (+ C/F/K/R type letters); **F2** re-runs console PASS/FAIL selftest
-- **STI map:** `res/maps/map.lua` — one Victorian decaying courtyard; districts by props (Ash Market / Plague Well / Watch Yard)
-- **Nest cleanse loop** (`scripts/nests.lua`): stand in nest + **Hold E** for 2s to seal (serum cost 2s once); kill infected → `+1s`; 3/3 → **SECTOR CLEANSED**; timer 0 → **EXTRACTED**
+- **STI map:** `res/maps/map.lua` — one Victorian decaying courtyard; districts by props (Ash Market / Ossuary / Watch Yard) + fountain Plague Well
+- **Nest cleanse loop** (`scripts/nests.lua`): **3+1** — seal 3 district nests (Hold E, 2s, serum cost 2s once), then unlock the fountain **Plague Well**; well cleanse → **SECTOR CLEANSED**. Kill infected → `+1s`; timer 0 → **EXTRACTED**. Never win at district 3/3 alone.
 - **Courtyard collapse** (`scripts/collapse.lua`): tiles crack (1s telegraph) then fall into black abyss; standing on a fallen cell → **EXTRACTED**. Fountain + nest centers never fall.
 
 Physics loop: input → normalize → `setLinearVelocity` → swing pose + sync sensors → `world:update(dt)` → hit enter poll → sync draw/camera from collider.
@@ -116,7 +116,7 @@ Tune in `scripts/enemy_types.lua` (`defaults`) or per-spawn overrides in `enemy:
 
 ### Map contract (`res/maps/map.lua`) — one infested courtyard
 
-**One continuous Victorian/plague courtyard** on shared ornate cobble (`dungeon_tiles2`). Fountain is the eternal focal point (Nest B / Plague Well). West / center / east are **discernable by props + sparse decals**, not by foreign biome packs.
+**One continuous Victorian/plague courtyard** on shared ornate cobble (`dungeon_tiles2`). Fountain is the eternal focal point (**Plague Well** — locked until 3 district nests are sealed). Districts (Ash Market SW / Watch Yard NE / Ossuary SE) are **discernable by tall nest silhouettes + props**, not by foreign biome packs.
 
 **Primary tilesets only** for floors / walls / decay:
 

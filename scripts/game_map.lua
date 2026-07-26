@@ -209,6 +209,11 @@ local function parseSpawns(map)
             local key = name:sub(-1) -- a|b|c
             spawns.nests[key] = entry
             spawns.nests[name] = entry
+        elseif name == "nest_well" or name == "nest_d" then
+            spawns.nests.well = entry
+            spawns.nests.nest_well = entry
+            spawns.nests.d = entry
+            spawns.nests.nest_d = entry
         elseif entry.type == "chaser"
             or entry.type == "fleer"
             or entry.type == "keeper"
