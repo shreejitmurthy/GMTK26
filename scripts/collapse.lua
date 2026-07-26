@@ -31,6 +31,13 @@ local started = false
 local fallenCount = 0
 local rumble = 0
 local protected = {}
+--- Per-wave nest→fountain path marks (O(1) candidate checks; rebuilt once/wave).
+local pathProtected = {}
+--- Cached draw lists so we do not scan the full grid every frame.
+local fxCracking = {}
+local fxFallen = {}
+local fxDirty = true
+local lastWaveMs = 0
 
 local function idx(col, row)
     return row * MAP_W + col + 1
@@ -154,58 +161,101 @@ local function clearFloorTile(col, row)
     clearLayerTile("Decals C", col, row)
 end
 
---- Floor-grid open for nest-reach BFS (fallen/cracking = blocked).
-local function isPathOpen(col, row, extraBlocked)
+local function isWalkable(col, row)
     if not inBounds(col, row) then
         return false
     end
-    local i = idx(col, row)
-    if extraBlocked and extraBlocked[i] then
-        return false
-    end
-    local cell = cells[i]
-    if not cell then
-        return false
-    end
-    return cell.state == SAFE
+    local cell = cells[idx(col, row)]
+    return cell ~= nil and cell.state == SAFE
 end
 
-local function canReachFountain(col, row, extraBlocked)
-    if not isPathOpen(col, row, extraBlocked) then
-        return false
-    end
-    local startI = idx(col, row)
-    local queue = { { col, row } }
-    local seen = { [startI] = true }
+--- One BFS from the fountain; mark BFS-tree corridors to each uncleansed nest.
+--- Candidates on those corridors are rejected in O(1) — no per-cell BFS.
+local function rebuildPathProtection(nests)
+    pathProtected = {}
+    local parentCol = {}
+    local parentRow = {}
+    local queue = {}
     local q = 1
+    for row = FOUNTAIN.r0, FOUNTAIN.r1 do
+        for col = FOUNTAIN.c0, FOUNTAIN.c1 do
+            if isWalkable(col, row) then
+                local i = idx(col, row)
+                if parentCol[i] == nil then
+                    parentCol[i] = col
+                    parentRow[i] = row
+                    queue[#queue + 1] = { col, row }
+                end
+            end
+        end
+    end
     while q <= #queue do
         local c, r = queue[q][1], queue[q][2]
         q = q + 1
-        if isFountain(c, r) then
-            return true
-        end
         for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
             local nc, nr = c + d[1], r + d[2]
             local ni = idx(nc, nr)
-            if not seen[ni] and isPathOpen(nc, nr, extraBlocked) then
-                seen[ni] = true
+            if parentCol[ni] == nil and isWalkable(nc, nr) then
+                parentCol[ni] = c
+                parentRow[ni] = r
                 queue[#queue + 1] = { nc, nr }
             end
         end
     end
-    return false
-end
 
-local function uncleansedNestsStillReachable(nests, extraBlocked)
+    local function markPath(col, row)
+        local guard = 0
+        while inBounds(col, row) and guard < MAP_W * MAP_H do
+            guard = guard + 1
+            local i = idx(col, row)
+            pathProtected[i] = true
+            -- One-tile pad so a single drop cannot pinch the corridor shut.
+            for dr = -1, 1 do
+                for dc = -1, 1 do
+                    if math.abs(dc) + math.abs(dr) <= 1 then
+                        local cc, rr = col + dc, row + dr
+                        if inBounds(cc, rr) then
+                            pathProtected[idx(cc, rr)] = true
+                        end
+                    end
+                end
+            end
+            local pc, pr = parentCol[i], parentRow[i]
+            if pc == nil or (pc == col and pr == row) then
+                break
+            end
+            col, row = pc, pr
+        end
+    end
+
     for _, nest in ipairs(nests or {}) do
         if not nest.cleansed then
             local nc, nr = worldToCell(nest.x, nest.y)
-            if not canReachFountain(nc, nr, extraBlocked) then
-                return false
+            if parentCol[idx(nc, nr)] ~= nil then
+                markPath(nc, nr)
             end
         end
     end
-    return true
+end
+
+local function rebuildFxLists()
+    fxCracking = {}
+    fxFallen = {}
+    if cells and cells[1] then
+        for row = 0, MAP_H - 1 do
+            for col = 0, MAP_W - 1 do
+                local cell = cells[idx(col, row)]
+                if cell then
+                    if cell.state == CRACKING then
+                        fxCracking[#fxCracking + 1] = cell
+                    elseif cell.state == FALLEN then
+                        fxFallen[#fxFallen + 1] = cell
+                    end
+                end
+            end
+        end
+    end
+    fxDirty = false
 end
 
 local function uncleansedCount(nests)
@@ -228,7 +278,7 @@ local function fountainDist(col, row)
     return math.sqrt(dx * dx + dy * dy)
 end
 
-local function pickCandidates(playerCol, playerRow, ratio, nests)
+local function pickCandidates(playerCol, playerRow, ratio)
     local list = {}
     local maxFallen = math.floor(MAP_W * MAP_H * MAX_FALLEN_RATIO)
     if fallenCount >= maxFallen then
@@ -237,27 +287,22 @@ local function pickCandidates(playerCol, playerRow, ratio, nests)
 
     for row = 0, MAP_H - 1 do
         for col = 0, MAP_W - 1 do
-            local cell = cells[idx(col, row)]
+            local i = idx(col, row)
+            local cell = cells[i]
             if cell
                 and cell.state == SAFE
-                and not protected[idx(col, row)]
+                and not protected[i]
+                and not pathProtected[i]
                 and chebyshev(col, row, playerCol, playerRow) >= 2
             then
-                -- Never isolate an uncleansed nest behind voids too early.
-                local blocked = { [idx(col, row)] = true }
-                if not uncleansedNestsStillReachable(nests, blocked) then
-                    -- skip
-                else
-                    local edge = edgeScore(col, row)
-                    local away = fountainDist(col, row)
-                    -- Prefer edges + away from fountain; slight noise.
-                    local weight = (6 - math.min(edge, 5)) * 3 + away * 0.8
-                    weight = weight + love.math.random() * 2
-                    if ratio < 0.5 then
-                        weight = weight + (5 - edge)
-                    end
-                    list[#list + 1] = { col = col, row = row, weight = weight }
+                local edge = edgeScore(col, row)
+                local away = fountainDist(col, row)
+                local weight = (6 - math.min(edge, 5)) * 3 + away * 0.8
+                weight = weight + love.math.random() * 2
+                if ratio < 0.5 then
+                    weight = weight + (5 - edge)
                 end
+                list[#list + 1] = { col = col, row = row, weight = weight }
             end
         end
     end
@@ -302,6 +347,7 @@ local function beginCrack(col, row)
     if atmosphere.burstAt then
         atmosphere.burstAt(cx, cy, "ash", 4)
     end
+    fxDirty = true
     return true
 end
 
@@ -313,6 +359,7 @@ local function beginFall(col, row, state)
     cell.state = FALLEN
     cell.timer = 0
     fallenCount = fallenCount + 1
+    fxDirty = true
     clearFloorTile(col, row)
 
     local x, y = col * TILE, row * TILE
@@ -369,12 +416,15 @@ local function beginFall(col, row, state)
 end
 
 local function runWave(state, ratio)
+    local t0 = love.timer.getTime()
     local playerActor = state:getActor("player")
     if not playerActor or not playerActor.collider then
+        lastWaveMs = (love.timer.getTime() - t0) * 1000
         return
     end
     local pc, pr = worldToCell(playerActor.collider:getX(), playerActor.collider:getY())
     rebuildProtected(state.nests, ratio)
+    rebuildPathProtection(state.nests)
 
     local uncleansed = uncleansedCount(state.nests)
     local pressure = 1 - ratio
@@ -387,7 +437,7 @@ local function runWave(state, ratio)
     end
     drops = math.min(drops, 5)
 
-    local candidates = pickCandidates(pc, pr, ratio, state.nests)
+    local candidates = pickCandidates(pc, pr, ratio)
     local cracked = 0
     for _ = 1, drops do
         if #candidates == 0 then
@@ -397,17 +447,8 @@ local function runWave(state, ratio)
         if not pick then
             break
         end
-        -- Re-check isolation against cracks already chosen this wave.
-        local blocked = { [idx(pick.col, pick.row)] = true }
-        for row = 0, MAP_H - 1 do
-            for col = 0, MAP_W - 1 do
-                if cells[idx(col, row)].state == CRACKING then
-                    blocked[idx(col, row)] = true
-                end
-            end
-        end
-        if not uncleansedNestsStillReachable(state.nests, blocked) then
-            -- Drop this pick and try others.
+        local pi = idx(pick.col, pick.row)
+        if pathProtected[pi] or protected[pi] then
             local filteredSkip = {}
             for _, item in ipairs(candidates) do
                 if item.col ~= pick.col or item.row ~= pick.row then
@@ -417,10 +458,14 @@ local function runWave(state, ratio)
             candidates = filteredSkip
         elseif beginCrack(pick.col, pick.row) then
             cracked = cracked + 1
-            -- Remove picked + nearby from this wave's pool so drops spread.
+            -- Cracking cells are no longer walkable; refresh corridors once.
+            rebuildPathProtection(state.nests)
             local filtered = {}
             for _, item in ipairs(candidates) do
-                if chebyshev(item.col, item.row, pick.col, pick.row) > 1 then
+                local ii = idx(item.col, item.row)
+                if chebyshev(item.col, item.row, pick.col, pick.row) > 1
+                    and not pathProtected[ii]
+                then
                     filtered[#filtered + 1] = item
                 end
             end
@@ -435,13 +480,15 @@ local function runWave(state, ratio)
             candidates = filteredFail
         end
     end
+    lastWaveMs = (love.timer.getTime() - t0) * 1000
     if cracked > 0 then
         print(string.format(
-            "[collapse] wave: %d cracking (fallen %d / max ~%d, ratio=%.2f)",
+            "[collapse] wave: %d cracking (fallen %d / max ~%d, ratio=%.2f, %.2fms)",
             cracked,
             fallenCount,
             math.floor(MAP_W * MAP_H * MAX_FALLEN_RATIO),
-            ratio
+            ratio,
+            lastWaveMs
         ))
     end
 end
@@ -455,6 +502,9 @@ function collapse.load(map, nests)
     started = false
     fallenCount = 0
     rumble = 0
+    pathProtected = {}
+    lastWaveMs = 0
+    fxDirty = true
     rebuildProtected(nests, 1)
     for row = 0, MAP_H - 1 do
         for col = 0, MAP_W - 1 do
@@ -470,6 +520,7 @@ function collapse.load(map, nests)
             }
         end
     end
+    rebuildFxLists()
 end
 
 function collapse.update(dt, state)
@@ -562,24 +613,25 @@ end
 
 --- Abyss voids + crack telegraph (draw after Floor / decals / props).
 function collapse.drawFloorFx()
+    if not cells or not cells[1] then
+        return
+    end
+    if fxDirty then
+        rebuildFxLists()
+    end
     love.graphics.setLineWidth(1)
-    for row = 0, MAP_H - 1 do
-        for col = 0, MAP_W - 1 do
-            local cell = cells[idx(col, row)]
-            local x, y = col * TILE, row * TILE
-            if cell.state == FALLEN then
-                drawFallenCell(x, y)
-            elseif cell.state == CRACKING then
-                -- Stable crack lines only (no tile shake — that read as jitter).
-                local pulse = 0.55 + 0.45 * math.sin(cell.shake)
-                love.graphics.setColor(0.06, 0.04, 0.03, 0.2 + 0.12 * pulse)
-                love.graphics.rectangle("fill", x, y, TILE, TILE)
-                love.graphics.setColor(0.9, 0.65, 0.3, 0.5 + 0.35 * pulse)
-                love.graphics.line(x + 3, y + 4, x + 12, y + 13)
-                love.graphics.line(x + 11, y + 3, x + 4, y + 14)
-                love.graphics.line(x + 2, y + 9, x + 14, y + 8)
-            end
-        end
+    for _, cell in ipairs(fxFallen) do
+        drawFallenCell(cell.col * TILE, cell.row * TILE)
+    end
+    for _, cell in ipairs(fxCracking) do
+        local x, y = cell.col * TILE, cell.row * TILE
+        local pulse = 0.55 + 0.45 * math.sin(cell.shake)
+        love.graphics.setColor(0.06, 0.04, 0.03, 0.2 + 0.12 * pulse)
+        love.graphics.rectangle("fill", x, y, TILE, TILE)
+        love.graphics.setColor(0.9, 0.65, 0.3, 0.5 + 0.35 * pulse)
+        love.graphics.line(x + 3, y + 4, x + 12, y + 13)
+        love.graphics.line(x + 11, y + 3, x + 4, y + 14)
+        love.graphics.line(x + 2, y + 9, x + 14, y + 8)
     end
     love.graphics.setColor(1, 1, 1, 1)
 end
@@ -600,12 +652,14 @@ end
 
 --- Keep the black hole visible above the falling cobble quad.
 function collapse.drawFallenOverlay()
-    for row = 0, MAP_H - 1 do
-        for col = 0, MAP_W - 1 do
-            if cells[idx(col, row)].state == FALLEN then
-                drawFallenCell(col * TILE, row * TILE)
-            end
-        end
+    if not cells or not cells[1] then
+        return
+    end
+    if fxDirty then
+        rebuildFxLists()
+    end
+    for _, cell in ipairs(fxFallen) do
+        drawFallenCell(cell.col * TILE, cell.row * TILE)
     end
     love.graphics.setColor(1, 1, 1, 1)
 end
@@ -613,6 +667,22 @@ end
 --- Camera shake disabled — random rumble felt like movement jitter near voids.
 function collapse.getRumble()
     return 0, 0
+end
+
+function collapse.getLastWaveMs()
+    return lastWaveMs
+end
+
+--- Force one wave for timing / verify (debug / smoke only).
+function collapse.debugRunWaveNow(state)
+    if not state then
+        return 0
+    end
+    local ratio = state.countdown and state.countdown:getRatio() or 1
+    started = true
+    runWave(state, ratio)
+    waveCooldown = math.max(waveCooldown, 2)
+    return lastWaveMs
 end
 
 --- Debug: crack one safe cell near the player (never under feet).
@@ -623,21 +693,21 @@ function collapse.debugCrackNearPlayer(state)
     end
     local ratio = state.countdown and state.countdown:getRatio() or 1
     rebuildProtected(state.nests, ratio)
+    rebuildPathProtection(state.nests)
     local pc, pr = worldToCell(playerActor.collider:getX(), playerActor.collider:getY())
     local best, bestD
     for row = 0, MAP_H - 1 do
         for col = 0, MAP_W - 1 do
             local d = chebyshev(col, row, pc, pr)
+            local i = idx(col, row)
             if d >= 2 and d <= 4
-                and cells[idx(col, row)].state == SAFE
-                and not protected[idx(col, row)]
+                and cells[i].state == SAFE
+                and not protected[i]
+                and not pathProtected[i]
             then
-                local blocked = { [idx(col, row)] = true }
-                if uncleansedNestsStillReachable(state.nests, blocked) then
-                    if not bestD or d < bestD then
-                        bestD = d
-                        best = { col = col, row = row }
-                    end
+                if not bestD or d < bestD then
+                    bestD = d
+                    best = { col = col, row = row }
                 end
             end
         end

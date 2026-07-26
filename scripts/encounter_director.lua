@@ -12,15 +12,22 @@ local encounter_director = {}
 -- Tuning (all encounter cadence / fairness knobs live here)
 ---------------------------------------------------------------------------
 local TUNING = {
-    MAX_ACTIVE = 9,
+    --- Living + pending global cap (Prompt D).
+    MAX_ACTIVE = 6,
+    TYPE_CAPS = {
+        chaser = 3,
+        fleer = 2,
+        keeper = 2,
+        ranger = 1,
+    },
     --- Per uncleansed nest: seconds between pressure attempts.
-    PRESSURE_INTERVAL = 7.5,
+    PRESSURE_INTERVAL = 12.0,
     --- Stagger so three nests do not fire on the same frame at t=0.
-    PRESSURE_STAGGER = 2.4,
-    --- First pressure delay after run start (lets authored openers settle).
-    PRESSURE_START_DELAY = 4.0,
+    PRESSURE_STAGGER = 1.5,
+    --- First dynamic spawn ≥ 8s after run start.
+    PRESSURE_START_DELAY = 8.0,
     --- Retry soon when at cap or no safe point.
-    PRESSURE_RETRY = 1.25,
+    PRESSURE_RETRY = 1.6,
     TELEGRAPH_SECONDS = 0.6,
     MIN_PLAYER_DIST = 120,
     MIN_ENEMY_DIST = 36,
@@ -34,9 +41,9 @@ local TUNING = {
     RING_ATTEMPTS = 16,
     RANDOM_ATTEMPTS = 24,
     COMPOSITION = {
-        { type = "chaser", weight = 0.50 },
+        { type = "chaser", weight = 0.45 },
+        { type = "fleer", weight = 0.25 },
         { type = "keeper", weight = 0.20 },
-        { type = "fleer", weight = 0.20 },
         { type = "ranger", weight = 0.10 },
     },
     TIME_REWARDS = {
@@ -80,6 +87,35 @@ local function countActive(state)
         end
     end
     return n + #pending
+end
+
+--- Living + pending counts by type (authored openers count toward caps).
+local function countByType(state)
+    local counts = { chaser = 0, fleer = 0, keeper = 0, ranger = 0 }
+    for _, actor in ipairs(state.actors or {}) do
+        if actor.label == "enemy" and not actor.dead and actor.enemyType then
+            local t = actor.enemyType
+            if counts[t] ~= nil then
+                counts[t] = counts[t] + 1
+            end
+        end
+    end
+    for _, entry in ipairs(pending) do
+        local t = entry.enemyType
+        if counts[t] ~= nil then
+            counts[t] = counts[t] + 1
+        end
+    end
+    return counts
+end
+
+local function typeAtCap(state, enemyType)
+    local cap = TUNING.TYPE_CAPS[enemyType]
+    if not cap then
+        return true
+    end
+    local counts = countByType(state)
+    return (counts[enemyType] or 0) >= cap
 end
 
 local function cameraBounds()
@@ -163,16 +199,27 @@ function encounter_director.isSpawnSafe(x, y, state, opts)
     return true
 end
 
-local function pickCompositionType()
-    local roll = love.math.random()
-    local acc = 0
+local function pickCompositionType(state)
+    local options = {}
+    local sum = 0
     for _, entry in ipairs(TUNING.COMPOSITION) do
+        if not typeAtCap(state, entry.type) then
+            options[#options + 1] = entry
+            sum = sum + entry.weight
+        end
+    end
+    if #options == 0 or sum <= 0 then
+        return nil
+    end
+    local roll = love.math.random() * sum
+    local acc = 0
+    for _, entry in ipairs(options) do
         acc = acc + entry.weight
         if roll <= acc then
             return entry.type
         end
     end
-    return "chaser"
+    return options[#options].type
 end
 
 local function nestPosition(state, nestId)
@@ -259,11 +306,14 @@ local function beginTelegraph(nestId, state)
     if countActive(state) >= TUNING.MAX_ACTIVE then
         return false
     end
+    local enemyType = pickCompositionType(state)
+    if not enemyType then
+        return false
+    end
     local x, y = findSpawnPoint(nestId, state)
     if not x then
         return false
     end
-    local enemyType = pickCompositionType()
     pending[#pending + 1] = {
         x = x,
         y = y,
@@ -296,7 +346,11 @@ local function completeSpawn(entry, state)
             living = living + 1
         end
     end
+    -- entry was already removed from pending; living + remaining pending must fit.
     if living + #pending >= TUNING.MAX_ACTIVE then
+        return
+    end
+    if typeAtCap(state, entry.enemyType) then
         return
     end
 
@@ -411,6 +465,8 @@ function encounter_director.update(state, dt)
         end
     end
 
+    -- At most one new telegraph per frame (no same-frame multi-spawns).
+    local spawnedThisFrame = false
     for _, nest in ipairs(state.nests or {}) do
         if nest.cleansed then
             pressure[nest.id] = nil
@@ -422,10 +478,15 @@ function encounter_director.update(state, dt)
             end
             t = t - dt
             if t <= 0 then
-                if countActive(state) >= TUNING.MAX_ACTIVE then
+                if spawnedThisFrame then
+                    -- Keep ready; try again next frame so pressure does not clump.
+                    pressure[nest.id] = 0
+                elseif countActive(state) >= TUNING.MAX_ACTIVE then
                     pressure[nest.id] = TUNING.PRESSURE_RETRY
                 elseif beginTelegraph(nest.id, state) then
                     pressure[nest.id] = TUNING.PRESSURE_INTERVAL
+                        + (love.math.random() * 2.0 - 0.5) -- ~11–13s
+                    spawnedThisFrame = true
                 else
                     pressure[nest.id] = TUNING.PRESSURE_RETRY
                 end

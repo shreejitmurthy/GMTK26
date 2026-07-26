@@ -16,6 +16,8 @@ local nestList = {}
 local ratio = 1
 local t = 0
 local sealFlash = 0
+--- 0..1 courtyard recovery after all nests sealed (restart must clear).
+local cleanseAmount = 0
 
 local TORCHES = {
     { 22.5 * TILE, 5.5 * TILE },
@@ -73,6 +75,14 @@ local function seedAround(kind, cx, cy, radius, count)
     end
 end
 
+function atmosphere.setCleanse(amount)
+    cleanseAmount = math.max(0, math.min(1, amount or 0))
+end
+
+function atmosphere.getCleanse()
+    return cleanseAmount
+end
+
 function atmosphere.load(nests)
     nestList = nests or {}
     particles = {}
@@ -80,6 +90,7 @@ function atmosphere.load(nests)
     t = 0
     ratio = 1
     sealFlash = 0
+    cleanseAmount = 0
 
     local a = nestById("a")
     local b = nestById("b")
@@ -309,21 +320,45 @@ function atmosphere.drawWorld()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+--- Soft grass / recovery wash growing outward from the Plague Well fountain.
+function atmosphere.drawCleanseWorld()
+    if cleanseAmount <= 0 then
+        return
+    end
+    local maxR = 40 + 260 * cleanseAmount
+    for i = 6, 1, -1 do
+        local u = i / 6
+        local r = maxR * u
+        local a = 0.055 * cleanseAmount * (1.05 - u)
+        love.graphics.setColor(0.32, 0.52, 0.28, a)
+        love.graphics.circle("fill", FOUNTAIN_CX, FOUNTAIN_CY, r)
+    end
+    -- Bright clean fountain core.
+    love.graphics.setColor(0.75, 0.92, 0.78, 0.18 * cleanseAmount)
+    love.graphics.circle("fill", FOUNTAIN_CX, FOUNTAIN_CY, 28 + 22 * cleanseAmount)
+    love.graphics.setColor(0.95, 0.98, 0.88, 0.22 * cleanseAmount)
+    love.graphics.circle("fill", FOUNTAIN_CX, FOUNTAIN_CY, 14 + 10 * cleanseAmount)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 --- Screen-space grade; leave top HUD band alone. Soft unless tolerance is failing.
 function atmosphere.drawGrade()
     local w, h = love.graphics.getDimensions()
     local top = h * 0.14
-    local base = 0.035
-    love.graphics.setColor(0.08, 0.1, 0.14, base)
-    love.graphics.rectangle("fill", 0, top, w, h - top)
+    local plagueFade = 1 - cleanseAmount * 0.92
+    local base = 0.035 * plagueFade
+    if base > 0.002 then
+        love.graphics.setColor(0.08, 0.1, 0.14, base)
+        love.graphics.rectangle("fill", 0, top, w, h - top)
+    end
 
-    -- Urgency vignette only when ratio < 0.25.
-    if ratio < 0.25 then
+    -- Urgency vignette only when ratio < 0.25 (suppressed as the well cleanses).
+    if ratio < 0.25 and cleanseAmount < 0.5 then
         local urgency = (0.25 - ratio) / 0.25
         if ratio < 0.1 then
             urgency = urgency + (0.1 - ratio) * 2.0
         end
-        urgency = math.min(1, urgency)
+        urgency = math.min(1, urgency) * (1 - cleanseAmount * 2)
         local bands = 4
         for i = 0, bands - 1 do
             local a = urgency * 0.22 * (1 - i / bands)
@@ -334,6 +369,12 @@ function atmosphere.drawGrade()
             love.graphics.rectangle("fill", inset, top, 12, h - top)
             love.graphics.rectangle("fill", w - 12 - inset, top, 12, h - top)
         end
+    end
+
+    -- Warm brightening once the courtyard recovers.
+    if cleanseAmount > 0 then
+        love.graphics.setColor(0.88, 0.92, 0.72, 0.1 * cleanseAmount)
+        love.graphics.rectangle("fill", 0, top, w, h - top)
     end
 
     love.graphics.setColor(1, 1, 1, 1)

@@ -14,6 +14,7 @@ local collapse = require "scripts.collapse"
 local encounter_director = require "scripts.encounter_director"
 local enemy_test = require "scripts.enemy_test"
 local enemy_attacks = require "scripts.enemy_attacks"
+local game_flow = require "scripts.game_flow"
 require "scripts.player"
 require "scripts.sword"
 require "scripts.slash_trail"
@@ -30,15 +31,16 @@ DEBUG = false
 love.graphics.setDefaultFilter("nearest", "nearest")
 
 GAME_STATE = {
-    MAIN_MENU = 0,
-    GAMEPLAY = 1,
-    PAUSE_MENU = 2,
+    TITLE = 0,
+    NARRATIVE = 1,
+    GAMEPLAY = 2,
+    PAUSE = 3,
 }
 
 state = {
     actors = {},
     canvas = nil,
-    gameState = GAME_STATE.GAMEPLAY,
+    gameState = GAME_STATE.TITLE,
     countdown = nil,
     extracted = false,
     sectorCleared = false,
@@ -48,9 +50,16 @@ state = {
     hudTimerFont = nil,
     hudLabelFont = nil,
     hudHelpFont = nil,
+    hudTitleFont = nil,
+    hudBodyFont = nil,
+    hudSmallFont = nil,
     gameMap = nil,
     extractReason = nil,
     enemyTestMode = false,
+    winPresenting = false,
+    winReady = false,
+    winTimer = 0,
+    lastFrameDt = 0,
 }
 
 function state.onAfterFloor()
@@ -146,6 +155,7 @@ function state:onSectorCleared()
         "[nest] SECTOR CLEANSED — %.1fs remaining",
         self.countdown and self.countdown:getRemaining() or 0
     ))
+    game_flow.beginWinPresentation(self)
 end
 
 --- Single gameplay entry for plague damage (timer = health).
@@ -174,6 +184,7 @@ function state:applyPlayerDamage(amount, source, opts)
 
     if self.countdown:isExpired() then
         self.extracted = true
+        self.extractReason = "time"
         self.countdown:pause()
         print("[countdown] EXTRACTED — plague time exhausted")
     end
@@ -188,6 +199,17 @@ end
 --   4) actors sync visual pos from collider:getX/Y
 --   5) camera follows synced player pos
 function state:update(dt)
+    self.lastFrameDt = dt
+    if self.gameState == GAME_STATE.TITLE
+        or self.gameState == GAME_STATE.NARRATIVE
+    then
+        atmosphere.update(dt, 1, self.nests)
+        return
+    end
+    if self.gameState == GAME_STATE.PAUSE then
+        return
+    end
+
     if state.gameState == GAME_STATE.GAMEPLAY then
         if self.gameMap then
             game_map.update(self.gameMap, dt)
@@ -195,12 +217,16 @@ function state:update(dt)
 
         local playerActor = self:getActor("player")
         local frozen = self.extracted or self.sectorCleared
+        if self.sectorCleared then
+            game_flow.updateWin(self, dt)
+        end
 
         -- Timer-as-health: always update (pulse decays even after extract/clear).
         if self.countdown then
             self.countdown:update(dt)
             if not frozen and self.countdown:isExpired() then
                 self.extracted = true
+                self.extractReason = "time"
                 frozen = true
                 self.countdown:pause()
                 print("[countdown] EXTRACTED — plague time exhausted")
@@ -285,12 +311,18 @@ function state:update(dt)
                 self._freezeCamX = nil
                 self._freezeCamY = nil
             end
-        elseif playerActor and cam then
-            if not self._freezeCamX then
+        elseif cam then
+            if self.sectorCleared then
+                local fx, fy = game_flow.fountainFocus()
+                self._freezeCamX = fx
+                self._freezeCamY = fy
+            elseif playerActor and not self._freezeCamX then
                 self._freezeCamX = playerActor.pos.x
                 self._freezeCamY = playerActor.pos.y
             end
-            cam:lookAt(self._freezeCamX, self._freezeCamY)
+            if self._freezeCamX then
+                cam:lookAt(self._freezeCamX, self._freezeCamY)
+            end
         end
     end
 end
@@ -446,8 +478,16 @@ function state:drawHud()
         -- Title case reads cleaner in roundhand than all-caps.
         local label = "Plague Tolerance"
         local lw = labelFont:getWidth(label)
-        love.graphics.setColor(r, g, b, 0.55 * a)
-        love.graphics.print(label, cx - lw / 2, fuseY + fuseH + 4)
+        game_flow.printShadow(
+            labelFont,
+            label,
+            cx - lw / 2,
+            fuseY + fuseH + 4,
+            r,
+            g,
+            b,
+            0.9 * a
+        )
 
         -- Floating damage / heal readout near the timer.
         if dmgPulse > 0 and dmgAmount > 0 then
@@ -467,13 +507,20 @@ function state:drawHud()
         end
 
         -- Nest cleanse pips under Plague Tolerance.
-        local nestY = fuseY + fuseH + 28
+        local nestY = fuseY + fuseH + 32
         local cleansedCount = nests.countCleansed(self.nests)
         local nestLabel = string.format("NESTS %d/3", cleansedCount)
-        love.graphics.setFont(labelFont)
         local nlw = labelFont:getWidth(nestLabel)
-        love.graphics.setColor(0.9, 0.86, 0.78, 0.7)
-        love.graphics.print(nestLabel, cx - nlw / 2, nestY)
+        game_flow.printShadow(
+            labelFont,
+            nestLabel,
+            cx - nlw / 2,
+            nestY,
+            0.95,
+            0.9,
+            0.78,
+            0.95
+        )
 
         local pipR = 7
         local pipGap = 22
@@ -505,80 +552,75 @@ function state:drawHud()
         end
     end
 
-    if self.hintTime and self.hintTime > 0 and not self.extracted and not self.sectorCleared then
+    if self.hintTime and self.hintTime > 0
+        and not self.extracted
+        and not self.sectorCleared
+        and self.gameState == GAME_STATE.GAMEPLAY
+    then
         local alpha = math.min(1, self.hintTime / 1.2)
         if self.hintTime > 3 then
             alpha = math.min(1, (4 - self.hintTime) / 0.5)
         end
-        love.graphics.setFont(self.hudHelpFont or prevFont)
-        love.graphics.setColor(0.92, 0.88, 0.78, 0.85 * alpha)
-        love.graphics.printf(
+        game_flow.printfShadow(
+            self.hudHelpFont or prevFont,
             "Your time is your life — seal the three nests.",
             0,
             sh * 0.18,
             sw,
-            "center"
+            "center",
+            0.96,
+            0.9,
+            0.78,
+            0.95 * alpha
         )
     end
 
     -- Hold-E prompt only when standing in an uncleansed nest (not while walking past).
     local promptNest = nests.promptNest(self.nests)
-    if promptNest and not self.extracted and not self.sectorCleared then
-        love.graphics.setFont(self.hudHelpFont or prevFont)
-        love.graphics.setColor(0.92, 0.88, 0.78, 0.8)
-        love.graphics.printf("Hold E to cleanse", 0, sh * 0.78, sw, "center")
+    if promptNest
+        and not self.extracted
+        and not self.sectorCleared
+        and self.gameState == GAME_STATE.GAMEPLAY
+    then
+        local msg = "Hold E to cleanse"
+        local font = self.hudHelpFont or prevFont
+        local tw = font:getWidth(msg)
+        local th = font:getHeight()
+        local bx = (sw - tw) / 2 - 18
+        local by = sh * 0.76
+        love.graphics.setColor(0.08, 0.06, 0.04, 0.72)
+        love.graphics.rectangle("fill", bx, by - 4, tw + 36, th + 14, 4, 4)
+        game_flow.printfShadow(
+            font,
+            msg,
+            0,
+            by,
+            sw,
+            "center",
+            0.98,
+            0.92,
+            0.78,
+            1
+        )
     end
 
-    if self.sectorCleared then
-        local msg = "SECTOR CLEANSED"
-        if self.hudTimerFont then
-            love.graphics.setFont(self.hudTimerFont)
-        end
-        local tw = love.graphics.getFont():getWidth(msg)
-        local th = love.graphics.getFont():getHeight()
-        love.graphics.setColor(0, 0, 0, 0.55)
-        love.graphics.rectangle("fill", 0, sh / 2 - th, sw, th * 2.8)
-        love.graphics.setColor(0.75, 0.92, 0.7, 1)
-        love.graphics.print(msg, (sw - tw) / 2, sh / 2 - th / 2)
-        love.graphics.setColor(0.95, 0.9, 0.78, 0.9)
-        love.graphics.setFont(self.hudLabelFont or prevFont)
-        local left = self.countdown and self.countdown:format() or "0"
-        love.graphics.printf(
-            "Time remaining  " .. left,
+    if self.sectorCleared and self.winReady then
+        game_flow.drawVictory(self)
+    elseif self.sectorCleared and self.winPresenting then
+        game_flow.printfShadow(
+            self.hudLabelFont or prevFont,
+            "The Plague Well is cleansing…",
             0,
-            sh / 2 + th * 0.55,
+            sh * 0.16,
             sw,
-            "center"
+            "center",
+            0.85,
+            0.95,
+            0.78,
+            1
         )
-        love.graphics.setColor(1, 1, 1, 0.85)
-        love.graphics.setFont(self.hudHelpFont or prevFont)
-        love.graphics.printf("Esc to quit", 0, sh / 2 + th * 1.15, sw, "center")
     elseif self.extracted then
-        local msg = "EXTRACTED"
-        if self.hudTimerFont then
-            love.graphics.setFont(self.hudTimerFont)
-        end
-        local tw = love.graphics.getFont():getWidth(msg)
-        local th = love.graphics.getFont():getHeight()
-        love.graphics.setColor(0, 0, 0, 0.55)
-        love.graphics.rectangle("fill", 0, sh / 2 - th, sw, th * 2.8)
-        love.graphics.setColor(0.95, 0.85, 0.7, 1)
-        love.graphics.print(msg, (sw - tw) / 2, sh / 2 - th / 2)
-        love.graphics.setColor(0.9, 0.7, 0.55, 0.9)
-        love.graphics.setFont(self.hudLabelFont or prevFont)
-        local subtitle = self.extractReason == "abyss"
-            and "The courtyard gave way beneath you"
-            or string.format("Nests remaining: %d", nests.remaining(self.nests))
-        love.graphics.printf(
-            subtitle,
-            0,
-            sh / 2 + th * 0.55,
-            sw,
-            "center"
-        )
-        love.graphics.setColor(1, 1, 1, 0.85)
-        love.graphics.setFont(self.hudHelpFont or prevFont)
-        love.graphics.printf("Esc to quit", 0, sh / 2 + th * 1.15, sw, "center")
+        game_flow.drawExtract(self)
     end
 
     local playerActor = self:getActor("player")
@@ -588,44 +630,33 @@ function state:drawHud()
         return
     end
 
-    -- Secondary help: smaller, dimmer, bottom-left ΓÇö must not compete with timer.
-    local helpFont = self.hudHelpFont or prevFont
-    love.graphics.setFont(helpFont)
-    love.graphics.setColor(1, 1, 1, 0.55)
-    love.graphics.print(
-        string.format("pos %.0f, %.0f", playerActor.pos.x, playerActor.pos.y),
-        10,
-        sh - 40
-    )
     if state.enemyTestMode then
+        love.graphics.setFont(self.hudSmallFont or self.hudHelpFont or prevFont)
+        love.graphics.setColor(1, 1, 1, 0.75)
         love.graphics.print(
             "ENEMY TEST · WASD · Space swing · R reset · Esc quit",
             10,
-            sh - 24
-        )
-    else
-        love.graphics.print(
-            "WASD · Space swing · Hold E cleanse · V crack · R restart · H/G time · Esc",
-            10,
-            sh - 24
+            sh - 28
         )
     end
 
     enemy_test.drawHud(state)
 
     if physics.debug then
-        love.graphics.setColor(1, 1, 1, 0.7)
-        local vx, vy = playerActor:getVelocity()
+        love.graphics.setFont(self.hudSmallFont or self.hudHelpFont or prevFont)
+        love.graphics.setColor(1, 1, 1, 0.85)
         local speed = playerActor:getSpeed()
         love.graphics.print(
             string.format(
-                "DEBUG | col %.0f,%.0f |v| %.2f",
+                "DEBUG | col %.0f,%.0f |v| %.2f | pos %.0f,%.0f",
                 playerActor.collider:getX(),
                 playerActor.collider:getY(),
-                speed
+                speed,
+                playerActor.pos.x,
+                playerActor.pos.y
             ),
             10,
-            sh - 56
+            sh - 72
         )
 
         local counts = { chaser = 0, fleer = 0, keeper = 0, ranger = 0 }
@@ -658,19 +689,21 @@ function state:drawHud()
                 enc.cap
             ),
             10,
-            sh - 72
+            sh - 88
+        )
+        love.graphics.print(
+            string.format(
+                "frame %.2fms | last collapse wave %.2fms",
+                (self.lastFrameDt or 0) * 1000,
+                collapse.getLastWaveMs()
+            ),
+            10,
+            sh - 40
         )
     end
 
     love.graphics.setFont(prevFont)
     love.graphics.setColor(1, 1, 1, 1)
-end
-
-local function loadScriptFont(size)
-    -- Italianno: copperplate / roundhand cursive (18thΓÇô19th c. feel). OFL.
-    local font = love.graphics.newFont("res/fonts/Italianno-Regular.ttf", size)
-    font:setFilter("linear", "linear")
-    return font
 end
 
 local function argvHas(argv, flag)
@@ -681,8 +714,6 @@ local function argvHas(argv, flag)
     end
     return false
 end
-
-local fontsReady = false
 
 --- Build a fresh playable run (physics world, map colliders, actors, director).
 --- Safe to call again after state:prepareRestart.
@@ -705,6 +736,8 @@ local function beginRun(opts)
     state._freezeCamY = nil
     state.floats = {}
     state.hintTime = enemyTest and 0 or 4
+    game_flow.resetWin(state)
+    game_flow.ensureFonts(state)
     atmosphere.load(state.nests)
     collapse.load(state.gameMap, state.nests)
 
@@ -736,12 +769,6 @@ local function beginRun(opts)
     if enemyTest then
         -- Natural decay off; combat damage / sword kills still work.
         state.countdown:pause()
-    end
-    if not fontsReady then
-        state.hudTimerFont = loadScriptFont(72)
-        state.hudLabelFont = loadScriptFont(26)
-        state.hudHelpFont = loadScriptFont(20)
-        fontsReady = true
     end
     love.graphics.setFont(state.hudHelpFont)
 
@@ -823,11 +850,21 @@ function state:prepareRestart()
         runPhysicsSelftest = false,
         enemyTest = keepEnemyTest,
     })
+    self.gameState = GAME_STATE.GAMEPLAY
     print("[run] restart ready")
+end
+
+local function startFromNarrative()
+    beginRun({
+        runPhysicsSelftest = false,
+        enemyTest = false,
+    })
+    state.gameState = GAME_STATE.GAMEPLAY
 end
 
 function love.load(args)
     local argv = args or arg or {}
+    game_flow.ensureFonts(state)
 
     -- Courtyard art reset (cobble floor + dungeon_tiles districts; fountain kept):
     --   love . -- --patch-nests
@@ -844,51 +881,126 @@ function love.load(args)
 
     local enemyTest = argvHas(argv, "--enemy-test")
     local mapReadability = argvHas(argv, "--map-readability-quit")
-    local playerActor = select(1, beginRun({
-        runPhysicsSelftest = not enemyTest and not mapReadability,
-        enemyTest = enemyTest,
-    }))
+    if argvHas(argv, "--collapse-bench-quit") then
+        beginRun({ runPhysicsSelftest = false, enemyTest = false })
+        state.gameState = GAME_STATE.GAMEPLAY
+        local samples = {}
+        local sum = 0
+        for i = 1, 8 do
+            local ms = collapse.debugRunWaveNow(state)
+            samples[i] = ms
+            sum = sum + ms
+        end
+        table.sort(samples)
+        print(string.format(
+            "[collapse_bench] n=8 avg=%.2fms median=%.2fms max=%.2fms samples=%s",
+            sum / #samples,
+            samples[math.ceil(#samples / 2)],
+            samples[#samples],
+            table.concat((function()
+                local t = {}
+                for i, v in ipairs(samples) do
+                    t[i] = string.format("%.2f", v)
+                end
+                return t
+            end)(), ",")
+        ))
+        love.event.quit()
+        return
+    end
 
-    if enemyTest then
-        local smokeOk = enemy_test.runSmoke(
-            state,
-            playerActor or state:getActor("player")
-        )
-        if argvHas(argv, "--enemy-test-quit") then
-            print(smokeOk and "[enemy_test] DONE PASS" or "[enemy_test] DONE FAIL")
+    if argvHas(argv, "--flow-smoke-quit") then
+        local ok = true
+        local function check(name, cond)
+            print(string.format("[flow_smoke] %s: %s", cond and "PASS" or "FAIL", name))
+            ok = ok and cond
+        end
+        game_flow.enterTitle(state)
+        check("boot lands on TITLE", state.gameState == GAME_STATE.TITLE)
+        game_flow.enterNarrative(state)
+        check("Play opens NARRATIVE", state.gameState == GAME_STATE.NARRATIVE)
+        startFromNarrative()
+        check("Continue starts GAMEPLAY", state.gameState == GAME_STATE.GAMEPLAY)
+        check("run has countdown", state.countdown ~= nil)
+        state.sectorCleared = true
+        state:onSectorCleared()
+        for _ = 1, 200 do
+            game_flow.updateWin(state, 1 / 60)
+        end
+        check("win presentation reaches victory", state.winReady == true)
+        check("cleanse amount is full", atmosphere.getCleanse() >= 0.99)
+        for i = 1, 3 do
+            state:prepareRestart()
+            check(
+                "restart " .. i .. " clears win tint",
+                atmosphere.getCleanse() == 0
+                    and state.winReady == false
+                    and state.sectorCleared == false
+            )
+        end
+        state.extracted = true
+        state.extractReason = "abyss"
+        check("extract reason abyss", state.extractReason == "abyss")
+        print(ok and "[flow_smoke] ALL PASS" or "[flow_smoke] FAILED")
+        love.event.quit()
+        return
+    end
+
+    local skipTitle = enemyTest
+        or mapReadability
+        or argvHas(argv, "--selftest-quit")
+        or argvHas(argv, "--encounter-selftest")
+        or argvHas(argv, "--damage-verify")
+
+    if skipTitle then
+        local playerActor = select(1, beginRun({
+            runPhysicsSelftest = not enemyTest and not mapReadability,
+            enemyTest = enemyTest,
+        }))
+        state.gameState = GAME_STATE.GAMEPLAY
+
+        if enemyTest then
+            local smokeOk = enemy_test.runSmoke(
+                state,
+                playerActor or state:getActor("player")
+            )
+            if argvHas(argv, "--enemy-test-quit") then
+                print(smokeOk and "[enemy_test] DONE PASS" or "[enemy_test] DONE FAIL")
+                love.event.quit()
+                return
+            end
+        end
+
+        if argvHas(argv, "--encounter-selftest") then
+            local ok = encounter_director.runSelftest(state)
+            print(ok and "[encounter_selftest] ALL PASS" or "[encounter_selftest] FAILED")
             love.event.quit()
             return
         end
-    end
 
-    if argvHas(argv, "--encounter-selftest") then
-        local ok = encounter_director.runSelftest(state)
-        print(ok and "[encounter_selftest] ALL PASS" or "[encounter_selftest] FAILED")
-        love.event.quit()
-        return
-    end
+        if argvHas(argv, "--damage-verify") then
+            local ok = physics_selftest.verifyVisibleKills(playerActor or state:getActor("player"))
+            print(ok and "[damage_verify] DONE PASS" or "[damage_verify] DONE FAIL")
+            love.event.quit()
+            return
+        end
 
-    if argvHas(argv, "--damage-verify") then
-        local ok = physics_selftest.verifyVisibleKills(playerActor or state:getActor("player"))
-        print(ok and "[damage_verify] DONE PASS" or "[damage_verify] DONE FAIL")
-        love.event.quit()
-        return
-    end
+        if argvHas(argv, "--selftest-quit") then
+            love.event.quit()
+            return
+        end
 
-    if argvHas(argv, "--selftest-quit") then
-        love.event.quit()
-    end
-
-    -- Capture map readability frames (F1 colliders + forced nearby cracks → voids).
-    --   love . -- --map-readability-quit
-    if argvHas(argv, "--map-readability-quit") then
-        state._mapReadabilityCapture = {
-            frame = 0,
-            done = false,
-        }
-        physics.debug = true
-        DEBUG = true
-        print("[map_readability] capture armed (F1 on, forced cracks)")
+        if mapReadability then
+            state._mapReadabilityCapture = {
+                frame = 0,
+                done = false,
+            }
+            physics.debug = true
+            DEBUG = true
+            print("[map_readability] capture armed (F1 on, forced cracks)")
+        end
+    else
+        game_flow.enterTitle(state)
     end
 end
 
@@ -928,34 +1040,47 @@ function love.draw()
     -- Near-black clear — map must fully cover playable cells (no grey voids).
     love.graphics.setBackgroundColor(0.04, 0.04, 0.05)
 
-    cam:attach()
-    -- Perspective order: behind the fountain from above, in front from below.
-    -- Body, sword, and trails move across the scenery layer as one stack.
-    game_map.drawWithActors(state.gameMap, state.drawActors, state)
-    atmosphere.drawWorld()
-    if not state.enemyTestMode then
-        encounter_director.drawWorld()
+    if state.gameState == GAME_STATE.TITLE then
+        game_flow.drawTitle(state)
+        return
     end
-    -- Shared attack FX (slam circles + projectiles) for normal play and enemy-test.
-    enemy_attacks.drawAll(state.actors)
-    -- World-space float juice (+time / NEST SEALED).
-    if state.hudLabelFont then
-        love.graphics.setFont(state.hudLabelFont)
+    if state.gameState == GAME_STATE.NARRATIVE then
+        game_flow.drawNarrative(state)
+        return
     end
-    for _, f in ipairs(state.floats or {}) do
-        if f.world then
-            local a = math.max(0, f.life / f.maxLife)
-            love.graphics.setColor(f.r, f.g, f.b, a)
-            local tw = love.graphics.getFont():getWidth(f.text)
-            love.graphics.print(f.text, f.x - tw / 2, f.y)
+
+    if cam and state.gameMap then
+        cam:attach()
+        -- Perspective order: behind the fountain from above, in front from below.
+        game_map.drawWithActors(state.gameMap, state.drawActors, state)
+        atmosphere.drawWorld()
+        atmosphere.drawCleanseWorld()
+        if not state.enemyTestMode then
+            encounter_director.drawWorld()
         end
+        enemy_attacks.drawAll(state.actors)
+        if state.hudLabelFont then
+            love.graphics.setFont(state.hudLabelFont)
+        end
+        for _, f in ipairs(state.floats or {}) do
+            if f.world then
+                local a = math.max(0, f.life / f.maxLife)
+                love.graphics.setColor(f.r, f.g, f.b, a)
+                local tw = love.graphics.getFont():getWidth(f.text)
+                love.graphics.print(f.text, f.x - tw / 2, f.y)
+            end
+        end
+        love.graphics.setColor(1, 1, 1, 1)
+        physics.drawDebug()
+        cam:detach()
     end
-    love.graphics.setColor(1, 1, 1, 1)
-    physics.drawDebug()
-    cam:detach()
 
     atmosphere.drawGrade()
     state:drawHud()
+
+    if state.gameState == GAME_STATE.PAUSE then
+        game_flow.drawPause(state)
+    end
 
     local cap = state._mapReadabilityCapture
     if cap and cap.queuedShot and not cap.done then
@@ -963,30 +1088,11 @@ function love.draw()
         love.graphics.captureScreenshot(function(imageData)
             local path = "map_readability_after.png"
             imageData:encode("png", path)
-            local notes = table.concat({
-                "Map readability capture (after Prompt map/void polish)",
-                "",
-                "Obstacles:",
-                "- Props/Walls Layer drawn with darker multiplicative tints",
-                "- Rectangle Colliders get charcoal silhouette bases under props",
-                "- auditColliderPropCoverage: every Wall rect center sits on a Props tile",
-                "- Boundary walls remain on the rim under Walls Layer tiles (not invisible interior)",
-                "",
-                "Abyss:",
-                "- Fallen cells: rim + inset depth ring + near-black core (not flat black cobble)",
-                "- Cracking telegraph: amber outline + crack lines (still obvious)",
-                "- Player center on fallen → EXTRACTED (abyss); enemies voided with no +time",
-                "",
-                "Fairness:",
-                "- Fountain + nest pads protected; nest approach corridors until late",
-                "- Crack picks reject cells that would isolate uncleansed nests from fountain",
-                "",
-                "Verify: F1 overlays visible in this shot; forced cracks near player have fallen.",
-                "Controls: V = crack near player; F1 = colliders.",
-            }, "\n")
-            love.filesystem.write("map_readability_notes.txt", notes)
+            love.filesystem.write(
+                "map_readability_notes.txt",
+                "Map readability capture\n"
+            )
             print("[map_readability] wrote " .. love.filesystem.getSaveDirectory() .. "/" .. path)
-            print("[map_readability] wrote map_readability_notes.txt")
             love.event.quit()
         end)
     end
@@ -1006,37 +1112,91 @@ local function startPlayerSwingAt(screenX, screenY)
 end
 
 function love.keypressed(k)
+    if state.gameState == GAME_STATE.TITLE then
+        if k == "escape" then
+            love.event.quit()
+        else
+            game_flow.enterNarrative(state)
+        end
+        return
+    end
+
+    if state.gameState == GAME_STATE.NARRATIVE then
+        if k == "escape" then
+            game_flow.enterTitle(state)
+        elseif k == "return" or k == "kpenter" or k == "space" then
+            startFromNarrative()
+        end
+        return
+    end
+
+    if state.gameState == GAME_STATE.PAUSE then
+        if k == "escape" then
+            state.gameState = GAME_STATE.GAMEPLAY
+        elseif k == "r" then
+            state:prepareRestart()
+        elseif k == "q" then
+            love.event.quit()
+        end
+        return
+    end
+
+    -- End screens / cleanse beat: no combat input.
+    if state.extracted or state.sectorCleared then
+        if state.winReady or state.extracted then
+            if k == "escape" then
+                love.event.quit()
+            elseif k == "r" then
+                state:prepareRestart()
+            end
+        end
+        return
+    end
+
     if k == "escape" then
-        love.event.quit()
+        if state.gameState == GAME_STATE.GAMEPLAY
+            and not state.extracted
+            and not state.sectorCleared
+        then
+            state.gameState = GAME_STATE.PAUSE
+        end
     elseif k == "f1" or k == "`" then
         local on = physics.toggleDebug()
         DEBUG = on
         print("[physics] debug draw: " .. (on and "ON" or "OFF"))
     elseif k == "f2" then
-        local enemies = {}
-        for _, actor in ipairs(state.actors) do
-            if actor.label == "enemy" then
-                enemies[#enemies + 1] = actor
+        -- Synchronous selftest is expensive — only when F1 debug is already on.
+        if physics.debug then
+            local enemies = {}
+            for _, actor in ipairs(state.actors) do
+                if actor.label == "enemy" then
+                    enemies[#enemies + 1] = actor
+                end
+            end
+            physics_selftest.run(state:getActor("player"), enemies)
+        end
+    elseif k == "h" then
+        -- Debug-only plague damage (hidden from normal HUD prompts).
+        if physics.debug then
+            local ok, left = state:applyPlayerDamage(3, "debug", { bypassIFrames = true })
+            if ok then
+                print(string.format("[countdown] damage 3.0 → %.1fs left", left))
             end
         end
-        physics_selftest.run(state:getActor("player"), enemies)
-    elseif k == "h" then
-        -- Debug plague damage (bypasses i-frames for tuning).
-        local ok, left = state:applyPlayerDamage(3, "debug", { bypassIFrames = true })
-        if ok then
-            print(string.format("[countdown] damage 3.0 → %.1fs left", left))
-        end
     elseif k == "g" then
-        if state.countdown and not state.extracted then
+        if physics.debug and state.countdown and not state.extracted then
             state.countdown:addTime(5)
             print(string.format("[countdown] +5s → %.1fs left", state.countdown:getRemaining()))
         end
     elseif k == "v" then
-        if not state.extracted and not state.sectorCleared then
+        if physics.debug and not state.extracted and not state.sectorCleared then
             collapse.debugCrackNearPlayer(state)
         end
     elseif k == "r" then
-        state:prepareRestart()
+        -- Mid-run hard restart is a hitch; use pause-menu Restart instead.
+        if physics.debug then
+            state:prepareRestart()
+        end
     elseif k == "space" then
         if not state.extracted and not state.sectorCleared then
             startPlayerSwingAt(love.mouse.getPosition())
@@ -1045,7 +1205,27 @@ function love.keypressed(k)
 end
 
 function love.mousepressed(x, y, button)
-    if button == 1 and not state.extracted and not state.sectorCleared then
+    if button ~= 1 then
+        return
+    end
+    if state.gameState == GAME_STATE.TITLE then
+        game_flow.enterNarrative(state)
+        return
+    end
+    if state.gameState == GAME_STATE.NARRATIVE then
+        startFromNarrative()
+        return
+    end
+    if state.gameState == GAME_STATE.PAUSE
+        or state.extracted
+        or (state.sectorCleared and state.winReady)
+    then
+        return
+    end
+    if state.gameState == GAME_STATE.GAMEPLAY
+        and not state.extracted
+        and not state.sectorCleared
+    then
         startPlayerSwingAt(x, y)
     end
 end
