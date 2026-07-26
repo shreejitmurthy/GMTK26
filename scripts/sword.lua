@@ -170,14 +170,14 @@ end
 
 --- Active arcs use their exact hilt; the floating idle pose uses its visual hilt.
 function sword:getDrawDepth()
-    if self.owner.hasSwung and self:isBehindPlayer() then
+    if self:isBehindPlayer() then
         return self.owner.pos.y - 0.5
     end
     return self.owner.pos.y + 0.5
 end
 
 function sword:draw()
-    if not self.visible or not self.owner.hasSwung then
+    if not self.visible then
         return
     end
 

@@ -6,7 +6,7 @@ Top-down hack-and-slash jam game. **Countdown timer is health** — the time you
 
 - Grey room + camera follow
 - Windfield world (`scripts/physics.lua`): **zero gravity**, collision classes, stub arena walls
-- Player (`scripts/player.lua`): WASD + arrows, **normalized** diagonal velocity, collider is position source of truth, and directional run/idle animations from `plagueDoctorSheet.png`
+- Player (`scripts/player.lua`): WASD + arrows, **normalized** diagonal velocity, collider-owned movement, Shift dash with yellow flash/white smears, and directional run/held-idle/attack animations from `plagueDoctorSheetAttack.png`
 - Sword (`scripts/sword.lua`): separate actor using frame one of the 16×16 sword atlas; a continuous outward turnover finishes in mirrored 15° resting tilts without crossing the player
 - Slash trail (`scripts/slash_trail.lua`): procedural fading ribbon generated from the sword's hilt/tip pose and split across behind/front player layers
 - Enemies: soft barriers + `EnemyHit` sensor hurtboxes; resistance increases near their body and contact permits only a tiny, momentum-free nudge

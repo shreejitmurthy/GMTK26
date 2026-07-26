@@ -22,7 +22,7 @@ local NARRATIVE_STORY = {
 }
 
 local NARRATIVE_RULES = {
-    "WASD move · Mouse / Space attack",
+    "WASD move · Shift dash · Mouse / Space attack",
     "Hold E to cleanse nests",
     "Kills restore time · Hits & cleansing cost it",
     "Cracking ground collapses into the abyss",

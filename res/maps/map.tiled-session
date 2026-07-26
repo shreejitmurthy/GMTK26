@@ -1,0 +1,26 @@
+{
+    "activeFile": "",
+    "expandedProjectPaths": [
+    ],
+    "fileStates": {
+        "dungeon_tiles2.tsx": {
+            "scaleInDock": 2.8476,
+            "scaleInEditor": 1
+        },
+        "map.tmx": {
+            "scale": 4.5759,
+            "selectedLayer": 1,
+            "viewCenter": {
+                "x": 234.16158569898818,
+                "y": 196.2455473240237
+            }
+        }
+    },
+    "openFiles": [
+    ],
+    "project": "map.tiled-project",
+    "recentFiles": [
+        "map.tmx",
+        "dungeon_tiles2.tsx"
+    ]
+}

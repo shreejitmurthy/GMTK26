@@ -23,17 +23,35 @@ local SWING_END_WEIGHT = 0.2
 local SWORD_HILT_GAP = 0
 local SWORD_HORIZONTAL_REST_TILT = math.rad(15)
 local SWORD_VERTICAL_REST_TILT = math.rad(35)
-local ENEMY_HIT_FLASH_DURATION = 0.18
-local PLAYER_SHEET_PATH = "res/images/plagueDoctorSheet.png"
-local PLAYER_MAX_FRAME_W = 25
-local PLAYER_MAX_FRAME_H = 32
+local ENEMY_HIT_FLASH_DURATION = 0.36
+local ENEMY_HIT_FLASH_INTERVAL = 0.045
+local PLAYER_SHEET_PATH = "res/images/plagueDoctorSheetAttack.png"
+local PLAYER_BODY_FRAME_W = 25
+local PLAYER_BODY_FRAME_H = 32
 local PLAYER_FRAME_COUNT = 6
 local PLAYER_SHEET_ROW_HEIGHT = 32
 local PLAYER_RUN_FRAME_DELAY = 0.1
 local PLAYER_IDLE_FRAME_DELAY = 0.3
+local PLAYER_ATTACK_FRAME_DELAY = 0.1
+local DASH_SPEED = 300
+local DASH_DURATION = 0.12
+local DASH_COOLDOWN = 0.6
+local DASH_SMEAR_INTERVAL = 0.03
+local DASH_SMEAR_LIFETIME = 0.18
+local DASH_SMEAR_MAX = 6
+local DASH_TINT = { 1, 0.82, 0.16, 1 }
+local DASH_SMEAR_SHADER_SOURCE = [[
+vec4 effect(vec4 color, Image texture, vec2 textureCoords, vec2 screenCoords)
+{
+    float alpha = Texel(texture, textureCoords).a * color.a;
+    return vec4(1.0, 1.0, 1.0, alpha);
+}
+]]
 
--- Every row occupies 32 pixels in the combined image. Shorter frames are
--- bottom-aligned within that row, so their top offset includes the difference.
+local dashSmearShader
+
+-- The first eight rows occupy 32 pixels each. Shorter held/run frames are
+-- bottom-aligned within those rows; attack rows use their explicit cell tops.
 local PLAYER_ANIMATION_SPECS = {
     run = {
         right = { row = 1, width = 25, height = 32 },
@@ -45,14 +63,22 @@ local PLAYER_ANIMATION_SPECS = {
         right = { row = 5, width = 20, height = 30 },
         left = { row = 6, width = 20, height = 30 },
         down = { row = 7, width = 19, height = 31 },
-        -- Row eight is another up-facing idle until the art is corrected.
         up = { row = 8, width = 19, height = 31 },
+    },
+    attack = {
+        right = { top = 256, width = 41, height = 35, centerOnPlayer = true },
+        left = { top = 291, width = 41, height = 35, centerOnPlayer = true },
+        down = { top = 326, width = 22, height = 43, centerOnPlayer = true },
+        up = { top = 369, width = 22, height = 43, centerOnPlayer = true },
     },
 }
 
 local function newDirectionalAnimation(baseSpritesheet, spec, delay)
-    local rowTop = (spec.row - 1) * PLAYER_SHEET_ROW_HEIGHT
-        + (PLAYER_SHEET_ROW_HEIGHT - spec.height)
+    local rowTop = spec.top
+    if not rowTop then
+        rowTop = (spec.row - 1) * PLAYER_SHEET_ROW_HEIGHT
+            + (PLAYER_SHEET_ROW_HEIGHT - spec.height)
+    end
     local spritesheet = baseSpritesheet:newView(
         spec.width,
         spec.height,
@@ -67,19 +93,24 @@ local function newDirectionalAnimation(baseSpritesheet, spec, delay)
             { 1, PLAYER_FRAME_COUNT },
             delay
         ),
+        centerOnPlayer = spec.centerOnPlayer == true,
     }
 end
 
 local function newPlayerAnimations(spritesheet)
-    local animations = { run = {}, idle = {} }
+    local animations = {}
+    local delays = {
+        run = PLAYER_RUN_FRAME_DELAY,
+        idle = PLAYER_IDLE_FRAME_DELAY,
+        attack = PLAYER_ATTACK_FRAME_DELAY,
+    }
 
-    for direction, spec in pairs(PLAYER_ANIMATION_SPECS.run) do
-        animations.run[direction] =
-            newDirectionalAnimation(spritesheet, spec, PLAYER_RUN_FRAME_DELAY)
-    end
-    for direction, spec in pairs(PLAYER_ANIMATION_SPECS.idle) do
-        animations.idle[direction] =
-            newDirectionalAnimation(spritesheet, spec, PLAYER_IDLE_FRAME_DELAY)
+    for animationState, directionSpecs in pairs(PLAYER_ANIMATION_SPECS) do
+        animations[animationState] = {}
+        for direction, spec in pairs(directionSpecs) do
+            animations[animationState][direction] =
+                newDirectionalAnimation(spritesheet, spec, delays[animationState])
+        end
     end
 
     return animations
@@ -90,6 +121,32 @@ local function animationDirection(dx, dy)
         return dx > 0 and "right" or "left"
     end
     return dy > 0 and "down" or "up"
+end
+
+local function movementInput(controls)
+    local x, y = 0, 0
+    if love.keyboard.isDown(unpack(controls.left)) then
+        x = -1
+    elseif love.keyboard.isDown(unpack(controls.right)) then
+        x = 1
+    end
+    if love.keyboard.isDown(unpack(controls.up)) then
+        y = -1
+    elseif love.keyboard.isDown(unpack(controls.down)) then
+        y = 1
+    end
+    return x, y
+end
+
+local function facingVector(direction)
+    if direction == "left" then
+        return -1, 0
+    elseif direction == "up" then
+        return 0, -1
+    elseif direction == "down" then
+        return 0, 1
+    end
+    return 1, 0
 end
 
 -- Tunables: enemy hit drain (seconds) + invuln window after a hit.
@@ -212,12 +269,12 @@ function player:new(x, y)
 
     p.spritesheet = newSpritesheet(
         PLAYER_SHEET_PATH,
-        PLAYER_MAX_FRAME_W,
-        PLAYER_MAX_FRAME_H
+        PLAYER_BODY_FRAME_W,
+        PLAYER_BODY_FRAME_H
     )
     p.img = p.spritesheet.image
-    p.spriteW = PLAYER_MAX_FRAME_W
-    p.spriteH = PLAYER_MAX_FRAME_H
+    p.spriteW = PLAYER_BODY_FRAME_W
+    p.spriteH = PLAYER_BODY_FRAME_H
     p.animations = newPlayerAnimations(p.spritesheet)
     p.animationDirection = "right"
     p.current_animation_data = p.animations.idle[p.animationDirection]
@@ -229,6 +286,7 @@ function player:new(x, y)
         right = { "d", "right" },
         up    = { "w", "up" },
         down  = { "s", "down" },
+        dash  = { "lshift", "rshift" },
     }
     -- Cardinal components use -1/1: left/right on x, up/down on y.
     -- Keep facing as an alias while attack code migrates to the direction vector.
@@ -254,7 +312,17 @@ function player:new(x, y)
     p.swingHitEnemies = {}
     p.enemyHitCount = 0
     p.enemyHitFlash = 0
+    p.enemyHitFlashElapsed = 0
     p.hurtIFrame = 0
+    p.dashTime = 0
+    p.dashCooldown = 0
+    p.dashDirection = { x = 1, y = 0 }
+    p.isDashing = false
+    p.dashSmearTimer = 0
+    p.dashSmears = {}
+    dashSmearShader =
+        dashSmearShader or love.graphics.newShader(DASH_SMEAR_SHADER_SOURCE)
+    p.dashSmearShader = dashSmearShader
     p.hitDamageSeconds = player.HIT_DAMAGE_SECONDS
     p.hurtIFrameDuration = player.HURT_IFRAME
     -- Set by gameplay (state:applyPlayerDamage) so combat drain stays centralized.
@@ -312,6 +380,7 @@ function player:onHitByEnemy(source)
 
     self.enemyHitCount = self.enemyHitCount + 1
     self.enemyHitFlash = ENEMY_HIT_FLASH_DURATION
+    self.enemyHitFlashElapsed = 0
     if remaining ~= nil then
         print(string.format(
             "[hit] %s hit player (#%d) → %.1fs left",
@@ -429,6 +498,12 @@ function player:startSwing(targetX, targetY)
     self.aimDirection.x = fx
     self.aimDirection.y = fy
     self.animationDirection = animationDirection(fx, fy)
+    local attackAnimationData = self.animations.attack[self.animationDirection]
+    attackAnimationData.animation.currentTime = 0
+    attackAnimationData.animation.currentIndex = 1
+    self.current_animation_data = attackAnimationData
+    self.current_animation = attackAnimationData.animation
+    self.current_spritesheet = attackAnimationData.spritesheet
     self.swingDirection = self.nextSwingDirection
     self.nextSwingDirection = -self.nextSwingDirection
     self.swingSerial = self.swingSerial + 1
@@ -466,6 +541,91 @@ function player:updateSwing(dt)
     if self.swingT >= totalDuration then
         self.swinging = false
         self:disableAttackHitbox()
+    end
+end
+
+function player:addDashSmear()
+    local animationData = self.current_animation_data
+    local animation = animationData and animationData.animation
+    local spritesheet = animationData and animationData.spritesheet
+    if not animation or not spritesheet then
+        return
+    end
+
+    local frameHeight = spritesheet.frameHeight
+    local drawY
+    if animationData.centerOnPlayer then
+        drawY = self.pos.y - frameHeight / 2
+    else
+        drawY = self.pos.y + self.spriteH / 2 - frameHeight
+    end
+    self.dashSmears[#self.dashSmears + 1] = {
+        image = spritesheet.image,
+        quad = animation.frames[animation.currentIndex],
+        x = self.pos.x - spritesheet.frameWidth / 2,
+        y = drawY,
+        age = 0,
+    }
+
+    while #self.dashSmears > DASH_SMEAR_MAX do
+        table.remove(self.dashSmears, 1)
+    end
+end
+
+function player:startDash()
+    if self.dashTime > 0 or self.dashCooldown > 0 then
+        return false
+    end
+
+    local dx, dy = movementInput(self.controls)
+    if self.swinging then
+        dx, dy = self.aimDirection.x, self.aimDirection.y
+    elseif dx == 0 and dy == 0 then
+        dx, dy = facingVector(self.animationDirection)
+    else
+        self.direction.x = dx
+        self.direction.y = dy
+        self.animationDirection = animationDirection(dx, dy)
+    end
+    dx, dy = player.normalizedVelocity(dx, dy, 1)
+
+    self.dashDirection.x = dx
+    self.dashDirection.y = dy
+    self.dashTime = DASH_DURATION
+    self.dashCooldown = DASH_COOLDOWN
+    self.isDashing = true
+    self.dashSmearTimer = DASH_SMEAR_INTERVAL
+    self:addDashSmear()
+    return true
+end
+
+--- Age dash ghosts and return whether dash velocity applies this frame.
+function player:updateDash(dt)
+    self.dashCooldown = math.max(0, self.dashCooldown - dt)
+    for index = #self.dashSmears, 1, -1 do
+        local smear = self.dashSmears[index]
+        smear.age = smear.age + dt
+        if smear.age >= DASH_SMEAR_LIFETIME then
+            table.remove(self.dashSmears, index)
+        end
+    end
+
+    local dashing = self.dashTime > 0
+    self.isDashing = dashing
+    if dashing then
+        self.dashTime = math.max(0, self.dashTime - dt)
+    end
+    return dashing
+end
+
+function player:emitDashSmears(dt)
+    if not self.isDashing then
+        return
+    end
+    self.dashSmearTimer = self.dashSmearTimer - dt
+    while self.dashSmearTimer <= 0 do
+        self:addDashSmear()
+        self.dashSmearTimer = self.dashSmearTimer + DASH_SMEAR_INTERVAL
     end
 end
 
@@ -589,43 +749,45 @@ end
 --- Step 1 of frame order: read input → normalize → setLinearVelocity; advance swing.
 function player:update(dt)
     if self.enemyHitFlash > 0 then
+        self.enemyHitFlashElapsed = self.enemyHitFlashElapsed + dt
         self.enemyHitFlash = math.max(0, self.enemyHitFlash - dt)
     end
     if self.hurtIFrame > 0 then
         self.hurtIFrame = math.max(0, self.hurtIFrame - dt)
     end
-    local input = { x = 0, y = 0 }
-
-    -- controls.* are key lists (ref2-style); unpack so both WASD and arrows register.
-    if love.keyboard.isDown(unpack(self.controls.left)) then
-        input.x = -1
-    elseif love.keyboard.isDown(unpack(self.controls.right)) then
-        input.x = 1
-    end
-
-    if love.keyboard.isDown(unpack(self.controls.up)) then
-        input.y = -1
-    elseif love.keyboard.isDown(unpack(self.controls.down)) then
-        input.y = 1
-    end
+    local input = {}
+    input.x, input.y = movementInput(self.controls)
+    local dashing = self:updateDash(dt)
 
     if input.x ~= 0 or input.y ~= 0 then
         self.direction.x = input.x
         self.direction.y = input.y
-        if not self.swinging then
+        if not self.swinging and not dashing then
             self.animationDirection = animationDirection(input.x, input.y)
         end
     end
 
-    local animationState =
-        (input.x ~= 0 or input.y ~= 0) and "run" or "idle"
+    local animationState
+    if self.swinging then
+        animationState = "attack"
+    else
+        local moving = input.x ~= 0 or input.y ~= 0 or dashing
+        animationState = moving and "run" or "idle"
+    end
     self.current_animation_data =
         self.animations[animationState][self.animationDirection]
     self.current_animation = self.current_animation_data.animation
     self.current_spritesheet = self.current_animation_data.spritesheet
     self.current_animation:update(dt)
+    self:emitDashSmears(dt)
 
-    local vx, vy = player.normalizedVelocity(input.x, input.y, self.speed)
+    local vx, vy
+    if dashing then
+        vx = self.dashDirection.x * DASH_SPEED
+        vy = self.dashDirection.y * DASH_SPEED
+    else
+        vx, vy = player.normalizedVelocity(input.x, input.y, self.speed)
+    end
     vx, vy = physics.applyEnemyResistance(self.collider, vx, vy, dt)
     self.collider:setLinearVelocity(vx, vy)
 
@@ -664,18 +826,51 @@ function player:getGroundDepth()
     return self.pos.y + self.spriteH / 2
 end
 
+function player:drawDashSmears()
+    if #self.dashSmears == 0 then
+        return
+    end
+
+    love.graphics.setShader(self.dashSmearShader)
+    for _, smear in ipairs(self.dashSmears) do
+        local remaining = math.max(0, 1 - smear.age / DASH_SMEAR_LIFETIME)
+        love.graphics.setColor(1, 1, 1, remaining * remaining * 0.5)
+        love.graphics.draw(smear.image, smear.quad, smear.x, smear.y)
+    end
+    love.graphics.setShader()
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+function player:isDamageFlashVisible()
+    if self.enemyHitFlash <= 0 then
+        return false
+    end
+    local flashStep =
+        math.floor(self.enemyHitFlashElapsed / ENEMY_HIT_FLASH_INTERVAL)
+    return flashStep % 2 == 0
+end
+
 function player:draw()
-    if self.enemyHitFlash > 0 then
-        love.graphics.setColor(1, 0.45, 0.45, 1)
+    self:drawDashSmears()
+    if self:isDamageFlashVisible() then
+        love.graphics.setColor(1, 0.18, 0.18, 1)
+    elseif self.isDashing then
+        love.graphics.setColor(unpack(DASH_TINT))
     else
         love.graphics.setColor(1, 1, 1, 1)
     end
     local frameWidth = self.current_spritesheet.frameWidth
     local frameHeight = self.current_spritesheet.frameHeight
+    local drawY
+    if self.current_animation_data.centerOnPlayer then
+        drawY = self.pos.y - frameHeight / 2
+    else
+        drawY = self.pos.y + self.spriteH / 2 - frameHeight
+    end
     self.current_spritesheet:draw(
         self.current_animation,
         self.pos.x - frameWidth / 2,
-        self.pos.y + self.spriteH / 2 - frameHeight
+        drawY
     )
     if physics.debug and self.attackHitbox then
         love.graphics.push()

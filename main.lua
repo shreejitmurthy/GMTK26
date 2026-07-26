@@ -634,7 +634,7 @@ function state:drawHud()
         love.graphics.setFont(self.hudSmallFont or self.hudHelpFont or prevFont)
         love.graphics.setColor(1, 1, 1, 0.75)
         love.graphics.print(
-            "ENEMY TEST · WASD · Space swing · R reset · Esc quit",
+            "ENEMY TEST · WASD · Shift dash · Space swing · R reset · Esc quit",
             10,
             sh - 28
         )
@@ -1111,6 +1111,13 @@ local function startPlayerSwingAt(screenX, screenY)
     playerActor:startSwing(worldX, worldY)
 end
 
+local function startPlayerDash()
+    local playerActor = state:getActor("player")
+    if playerActor and playerActor.startDash then
+        playerActor:startDash()
+    end
+end
+
 function love.keypressed(k)
     if state.gameState == GAME_STATE.TITLE then
         if k == "escape" then
@@ -1200,6 +1207,10 @@ function love.keypressed(k)
     elseif k == "space" then
         if not state.extracted and not state.sectorCleared then
             startPlayerSwingAt(love.mouse.getPosition())
+        end
+    elseif k == "lshift" or k == "rshift" then
+        if not state.extracted and not state.sectorCleared then
+            startPlayerDash()
         end
     end
 end
