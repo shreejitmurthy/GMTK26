@@ -1,8 +1,11 @@
--- Courtyard art reset: one Victorian decaying plaza, three subtle districts.
--- Rebuilds Floor (cobble everywhere) + Decals/Props from dungeon_tiles only.
+-- Deterministic courtyard authoring source: one Victorian plague-city plaza.
+-- Rebuilds Floor + district decals/props/walls and matching collision/spawns.
 -- Keeps Fountain Layer stamp + Circle Colliders fountain ellipse exactly.
 --
--- Run: love . -- --patch-nests
+-- DESTRUCTIVE: this regenerates both map.tmx and map.lua. The generated TMX is
+-- the canonical Tiled editing source afterward; do not rerun this reset over
+-- later hand edits unless intentionally rebuilding the complete courtyard.
+-- Run intentionally with: love . -- --patch-nests
 
 local M = {}
 
@@ -10,9 +13,9 @@ local MAP_W, MAP_H, TILE = 30, 24, 16
 
 -- dungeon_tiles (firstgid 1) — props / soot / crack accents
 local T = {
-    floorDark = { 73, 74, 96, 97, 119, 120 },
-    floorSoot = { 75, 98, 99, 121 },
-    floorWet = { 73, 74, 96, 119 },
+    floorDark = { 264, 265, 266, 267, 268 },
+    floorSoot = { 288 },
+    floorWet = { 1591, 1592, 1593, 1594, 1595, 1596, 1597 },
     crate = 172,
     crateTall = 173,
     chest = 171,
@@ -22,18 +25,25 @@ local T = {
     lintel = 149,
     ruin = { 260, 261, 283, 284 },
     pillar = 262,
-    grate = 218,
+    grate = 159,
     door = 150,
+    barricade = 218,
+    wallTop = 50,
+    wallBottom = 143,
+    wallLeft = 62,
+    wallRight = 63,
+    wallCornerNW = 48,
+    wallCornerNE = 56,
+    wallCornerSW = 141,
+    wallCornerSE = 145,
 }
 
--- dungeon_tiles2 ornate cobble (firstgid 553) — 6×6 seamless family already on map
+-- Daniel Siegmund grey cobbles (firstgid 1577) — packed 7×4 source crop.
 local COBBLE = {
-    { 681, 682, 683, 684, 685, 686 },
-    { 713, 714, 715, 716, 717, 718 },
-    { 745, 746, 747, 748, 749, 750 },
-    { 777, 778, 779, 780, 781, 782 },
-    { 809, 810, 811, 812, 813, 814 },
-    { 841, 842, 843, 844, 845, 846 },
+    { 1577, 1578, 1579, 1580, 1581, 1582, 1583 },
+    { 1584, 1585, 1586, 1587, 1588, 1589, 1590 },
+    { 1591, 1592, 1593, 1594, 1595, 1596, 1597 },
+    { 1598, 1599, 1600, 1601, 1602, 1603, 1604 },
 }
 
 -- Fountain footprint (0-based) — do not cover with props/decals.
@@ -70,97 +80,98 @@ local function put(data, col, row, gid)
     data[idx(col, row)] = gid
 end
 
---- Continuous ornate cobble; slight phase shifts break perfect tiling without biome cuts.
+--- One continuous muted cobble foundation across all three districts.
 local function buildFloor()
     local data = blank()
     for row = 0, MAP_H - 1 do
         for col = 0, MAP_W - 1 do
-            -- Soft district phase (1–2 tile feel), not a knife-edge biome.
-            local ox, oy = 0, 0
-            if col <= 10 then
-                ox = 1
-            elseif col >= 20 then
-                oy = 1
-            end
-            if ((col + row) % 11) == 0 then
-                ox = (ox + 1) % 6
-            end
-            local c = (col + ox) % 6
-            local r = (row + oy) % 6
-            data[idx(col, row)] = COBBLE[r + 1][c + 1]
+            local cobbleRow = COBBLE[(row % #COBBLE) + 1]
+            data[idx(col, row)] = cobbleRow[(col % #cobbleRow) + 1]
         end
     end
     return data
 end
 
---- Nest A "Ash Market" — west: denser soot/cracks on shared cobble.
+--- Ash Market: restrained soot clusters, heavier near the nest and west wall.
 local function buildDecalsA()
     local data = blank()
-    -- Light soot across whole yard so top doesn't read as a clean separate zone.
-    for row = 1, MAP_H - 2 do
-        for col = 1, MAP_W - 2 do
-            if not inFountain(col, row) and ((col * 7 + row * 13) % 17) == 0 then
+    for row = 2, MAP_H - 3 do
+        for col = 1, 10 do
+            local nearNest = math.abs(col - 4.5) + math.abs(row - 14.5) <= 5
+            local boundaryDecay = col <= 2 or row >= 20
+            local modulus = (nearNest or boundaryDecay) and 5 or 9
+            if ((col * 5 + row * 7) % modulus) == 0 then
                 put(data, col, row, pick(T.floorSoot, col, row))
-            end
-        end
-    end
-    -- Dense ash market west / lower-left.
-    for row = 6, 22 do
-        for col = 1, 11 do
-            local dens = (col <= 8) and 2 or 3
-            if ((col * 3 + row * 7) % dens) == 0 then
-                put(data, col, row, pick(T.floorSoot, col, row))
-            elseif ((col + row) % 5) == 0 then
+            elseif nearNest and ((col + row * 2) % 7) == 0 then
                 put(data, col, row, pick(T.floorDark, col, row))
             end
         end
     end
+    -- A few shared stains prevent a hard visual seam between districts.
+    for _, p in ipairs({ { 11, 5 }, { 9, 9 }, { 12, 18 }, { 7, 3 } }) do
+        put(data, p[1], p[2], pick(T.floorSoot, p[1], p[2]))
+    end
     return data
 end
 
---- Nest B "Plague Well" — soft wet/stain ring; keep combat ring readable.
+--- Plague Well: broken wet ring and drainage marks around an open arena.
 local function buildDecalsB()
     local data = blank()
-    local cx, cy = 14.5, 11.5
-    for row = 7, 16 do
-        for col = 10, 19 do
+    local cx, cy = 15, 12
+    for row = 6, 17 do
+        for col = 9, 20 do
             if not inFountain(col, row) then
                 local dx = (col + 0.5) - cx
                 local dy = (row + 0.5) - cy
                 local d2 = dx * dx + dy * dy
-                if d2 >= 6 and d2 <= 28 then
+                if d2 >= 9 and d2 <= 32 and ((col + row) % 3 ~= 0) then
                     put(data, col, row, pick(T.floorWet, col, row))
-                elseif d2 > 28 and d2 <= 40 and ((col + row) % 3) == 0 then
+                elseif d2 > 32 and d2 <= 46 and ((col + row) % 5) == 0 then
                     put(data, col, row, pick(T.floorSoot, col, row))
                 end
             end
         end
     end
+    -- Drainage run to the south-east, intentionally non-solid.
+    for row = 15, 20, 2 do
+        put(data, 18, row, T.grate)
+    end
     return data
 end
 
---- Nest C "Watch Yard" — east: sparse dark runners + rare grate accents.
+--- Watch Yard: straight drainage/soot lines and decay concentrated at defenses.
 local function buildDecalsC()
     local data = blank()
-    for row = 2, 8 do
-        for col = 18, 28 do
-            if ((col + row) % 5) == 0 then
+    for row = 2, 21 do
+        for col = 20, 28 do
+            local nearNest = math.abs(col - 24.5) + math.abs(row - 12.5) <= 5
+            local atBoundary = col >= 27 or row <= 3
+            if (nearNest or atBoundary) and ((col * 3 + row * 5) % 7) == 0 then
                 put(data, col, row, pick(T.floorDark, col, row))
             end
         end
     end
-    for row = 8, 21 do
-        for col = 20, 28 do
-            if col == 24 or col == 25 then
-                if (row % 4) == 0 then
-                    put(data, col, row, T.grate)
-                elseif (row % 2) == 0 then
-                    put(data, col, row, pick(T.floorDark, col, row))
-                end
-            elseif ((col * 2 + row) % 9) == 0 then
-                put(data, col, row, pick(T.floorDark, col, row))
-            end
-        end
+    for row = 6, 20, 3 do
+        put(data, 21, row, T.grate)
+    end
+    for col = 22, 27, 2 do
+        put(data, col, 18, pick(T.floorSoot, col, 18))
+    end
+    return data
+end
+
+--- Visible masonry occupies the same one-tile rim as the runtime boundary walls.
+local function buildWalls()
+    local data = blank()
+    for col = 0, MAP_W - 1 do
+        put(data, col, 0, col == 0 and T.wallCornerNW
+            or (col == MAP_W - 1 and T.wallCornerNE or T.wallTop))
+        put(data, col, MAP_H - 1, col == 0 and T.wallCornerSW
+            or (col == MAP_W - 1 and T.wallCornerSE or T.wallBottom))
+    end
+    for row = 1, MAP_H - 2 do
+        put(data, 0, row, T.wallLeft)
+        put(data, MAP_W - 1, row, T.wallRight)
     end
     return data
 end
@@ -168,47 +179,41 @@ end
 local function buildProps()
     local data = blank()
 
-    -- Nest A: denser crates/barrels (market clutter), walkable lanes remain.
+    -- Ash Market: three intentional solid clusters with broad lanes between.
     local market = {
-        { 2, 8, T.chest }, { 3, 8, T.barrel }, { 4, 9, T.crate },
-        { 2, 10, T.crate }, { 3, 11, T.crateLow }, { 5, 12, T.barrel },
-        { 2, 13, T.crateTall }, { 4, 14, T.crate }, { 3, 15, T.barrel },
-        { 6, 9, T.crate }, { 7, 16, T.barrel }, { 2, 17, T.crateLow },
-        { 5, 18, T.chest }, { 8, 19, T.barrel }, { 4, 20, T.crate },
-        { 1, 14, T.barrel }, { 9, 12, T.crateLow }, { 6, 21, T.crate },
+        -- Burned stall shell.
+        { 2, 6, T.ruin[1] }, { 3, 6, T.ruin[2] },
+        { 4, 6, T.ruin[3] }, { 5, 6, T.ruin[4] },
+        -- Abandoned cart/load west of the nest.
+        { 2, 12, T.chest }, { 3, 12, T.barrel },
+        -- Broken southern stockpile.
+        { 6, 18, T.crateLow }, { 7, 18, T.barrel },
     }
     for _, p in ipairs(market) do
         put(data, p[1], p[2], p[3])
     end
 
-    -- West ruin stubs (framing only — not a sealed chamber).
-    put(data, 1, 7, pick(T.ruin, 1, 7))
-    put(data, 2, 7, pick(T.ruin, 2, 7))
-    put(data, 1, 8, pick(T.ruin, 1, 8))
-    put(data, 1, 18, pick(T.ruin, 1, 18))
-    put(data, 2, 18, pick(T.ruin, 2, 18))
+    -- Plague Well: four small offering lights; the complete combat ring stays open.
+    put(data, 11, 8, T.torch)
+    put(data, 18, 8, T.torch)
+    put(data, 11, 16, T.torch)
+    put(data, 18, 16, T.torch)
 
-    -- Light debris on top edge so north matches the courtyard mood.
-    put(data, 4, 2, T.crate)
-    put(data, 8, 3, T.barrel)
-    put(data, 12, 1, T.crateLow)
-    put(data, 18, 2, T.barrel)
-
-    -- Nest B: open ring — one lone barrel south of the well.
-    put(data, 15, 16, T.barrel)
-
-    -- Nest C: sparse watch — few torches, gate fragment, open sightlines.
-    put(data, 22, 4, T.torch)
-    put(data, 27, 4, T.torch)
+    -- Watch Yard: straight defensive lines, visibly broken and still traversable.
+    put(data, 21, 4, T.pillar)
+    put(data, 28, 4, T.pillar)
+    put(data, 22, 5, T.torch)
+    put(data, 27, 5, T.torch)
+    for col = 23, 25 do
+        put(data, col, 9, T.barricade)
+    end
+    for row = 12, 14 do
+        put(data, 27, row, T.pillar)
+    end
     put(data, 26, 10, T.torch)
     put(data, 22, 18, T.torch)
-    put(data, 26, 6, T.lintel)
-    put(data, 27, 6, T.pillar)
-    put(data, 28, 6, T.door)
-    put(data, 21, 3, T.pillar)
-    put(data, 28, 3, T.pillar)
-    put(data, 28, 16, T.crateLow)
-    put(data, 23, 20, T.barrel)
+    put(data, 22, 17, T.crateLow)
+    put(data, 23, 17, T.barrel)
 
     return data
 end
@@ -233,26 +238,27 @@ local function buildRectangleColliders(startId)
     local objects = {}
     local id = startId
     local function add(name, col, row, wTiles, hTiles)
+        local insetX, insetY = 2, 3
         objects[#objects + 1] = rect(
             id,
             name,
-            col * TILE,
-            row * TILE,
-            wTiles * TILE,
-            hTiles * TILE
+            col * TILE + insetX,
+            row * TILE + insetY,
+            wTiles * TILE - insetX * 2,
+            hTiles * TILE - insetY - 2
         )
         id = id + 1
     end
 
-    -- Real solids only: ruin stubs + a couple market crates + watch pillars.
-    add("ruin_a_nw", 1, 7, 2, 2)
-    add("ruin_a_sw", 1, 18, 2, 1)
-    add("market_block_a", 3, 11, 1, 1)
-    add("market_block_b", 4, 14, 1, 1)
-    add("market_block_c", 5, 18, 1, 1)
-    add("watch_pillar_n", 21, 3, 1, 1)
-    add("watch_pillar_ne", 28, 3, 1, 1)
-    add("watch_pillar_e", 27, 6, 1, 1)
+    -- Every rectangle corresponds to the complete visible prop cluster above.
+    add("market_burned_stall", 2, 6, 4, 1)
+    add("market_abandoned_load", 2, 12, 2, 1)
+    add("market_stockpile", 6, 18, 2, 1)
+    add("watch_gate_post_w", 21, 4, 1, 1)
+    add("watch_gate_post_e", 28, 4, 1, 1)
+    add("watch_barricade_n", 23, 9, 3, 1)
+    add("watch_barricade_e", 27, 12, 1, 3)
+    add("watch_supply", 22, 17, 2, 1)
 
     return objects, id
 end
@@ -277,13 +283,13 @@ local function buildSpawns(startId)
     add("nest_b", 14, 11, 2, 2, { nest = "b", cleanseRadius = 36, district = "Plague Well" })
     add("nest_c", 24, 12, 2, 2, { nest = "c", cleanseRadius = 40, district = "Watch Yard" })
 
-    add("player_start", 6, 16, 1, 1, {})
+    add("player_start", 14, 20, 1, 1, {})
 
     add("spawn_chaser_a", 3, 9, 1, 1, { type = "chaser", nest = "a" })
-    add("spawn_fleer_a", 7, 18, 1, 1, { type = "fleer", nest = "a" })
-    add("spawn_keeper_b", 17, 8, 1, 1, { type = "keeper", nest = "b" })
-    add("spawn_chaser_b", 12, 16, 1, 1, { type = "chaser", nest = "b" })
-    add("spawn_ranger_c", 25, 8, 1, 1, { type = "ranger", nest = "c" })
+    add("spawn_fleer_a", 9, 17, 1, 1, { type = "fleer", nest = "a" })
+    add("spawn_keeper_b", 12, 6, 1, 1, { type = "keeper", nest = "b" })
+    add("spawn_chaser_b", 18, 15, 1, 1, { type = "chaser", nest = "b" })
+    add("spawn_ranger_c", 25, 7, 1, 1, { type = "ranger", nest = "c" })
 
     return objects, id
 end
@@ -344,7 +350,7 @@ local function removeLayer(map, name)
     end
 end
 
---- Full courtyard reset: cobble floor + dungeon_tiles overlays; fountain untouched.
+--- Full authored courtyard rebuild; fountain stamp and ellipse remain untouched.
 function M.patch(map)
     assert(map and map.layers, "map_patch_nests.patch requires a map table")
     local floor = assert(findLayer(map, "Floor Layer"), "Floor Layer missing")
@@ -379,10 +385,15 @@ function M.patch(map)
         nestA = "Ash Market",
         nestB = "Plague Well",
         nestC = "Watch Yard",
-        tilesetNote = "PRIMARY floors/walls/decay: dungeon_tiles + dungeon_tiles2 cobble. Districts = props/decals, not biomes.",
+        playableX = TILE,
+        playableY = TILE,
+        playableW = (MAP_W - 2) * TILE,
+        playableH = (MAP_H - 2) * TILE,
+        wallThickness = TILE,
+        tilesetNote = "One cobble court; district identity comes from restrained decay, clustered props, and visible architecture.",
     }
 
-    -- Primary tilesets only — unregister Kenney town/dungeon from this map.
+    -- Two existing prop/fountain sheets plus one credited cobblestone sheet.
     map.tilesets = {
         {
             name = "dungeon_tiles",
@@ -394,6 +405,11 @@ function M.patch(map)
             firstgid = 553,
             filename = "dungeon_tiles2.tsx",
         },
+        {
+            name = "victorian_cobbles",
+            firstgid = 1577,
+            filename = "victorian_cobbles.tsx",
+        },
     }
 
     map.layers = {
@@ -402,12 +418,13 @@ function M.patch(map)
         tileLayer(6, "Decals B", buildDecalsB()),
         tileLayer(7, "Decals C", buildDecalsC()),
         tileLayer(8, "Props", buildProps()),
+        tileLayer(10, "Walls Layer", buildWalls()),
         fountain,
         circles,
         rects,
         objectLayer(9, "Spawns", spawns),
     }
-    map.nextlayerid = 10
+    map.nextlayerid = 11
     map.nextobjectid = lastId
 
     if circles.objects[1] and (circles.objects[1].name == nil or circles.objects[1].name == "") then
@@ -448,11 +465,13 @@ local function serializeValue(value, indent)
                     parts[#parts + 1] = pad1
                     for col = 0, MAP_W - 1 do
                         parts[#parts + 1] = tostring(value[idx(col, row)])
-                        if not (row == MAP_H - 1 and col == MAP_W - 1) then
+                        if col < MAP_W - 1 then
                             parts[#parts + 1] = ", "
+                        elseif row < MAP_H - 1 then
+                            parts[#parts + 1] = ","
                         end
                     end
-                    parts[#parts + 1] = row < MAP_H - 1 and "\n" or "\n"
+                    parts[#parts + 1] = "\n"
                 end
                 parts[#parts + 1] = pad .. "}"
                 return table.concat(parts)
@@ -561,6 +580,7 @@ function M.toTmx(map)
         propertiesXml(map.properties, 1),
         " <tileset firstgid=\"1\" source=\"dungeon_tiles.tsx\"/>\n",
         " <tileset firstgid=\"553\" source=\"dungeon_tiles2.tsx\"/>\n",
+        " <tileset firstgid=\"1577\" source=\"victorian_cobbles.tsx\"/>\n",
     }
     for _, layer in ipairs(map.layers) do
         if layer.type == "tilelayer" then

@@ -215,9 +215,9 @@ function state:update(dt)
             collapse.update(dt, self)
             frozen = self.extracted or self.sectorCleared
             for _, actor in ipairs(self.actors) do
-                if actor.label == "enemy" then
+                if actor.label == "enemy" and not actor.dead then
                     actor:update(dt, playerActor)
-                else
+                elseif actor.label ~= "enemy" then
                     actor:update(dt)
                 end
             end
@@ -226,7 +226,21 @@ function state:update(dt)
             for _, actor in ipairs(self.actors) do
                 if actor.label == "enemy" and actor.collider then
                     actor.collider:setLinearVelocity(0, 0)
+                    if actor.dying and actor.updateDeath then
+                        actor:updateDeath(dt)
+                    end
                 end
+            end
+        end
+
+        -- Finalize faded enemies after iteration; removal cannot skip another actor.
+        for i = #self.actors, 1, -1 do
+            local actor = self.actors[i]
+            if actor.label == "enemy"
+                and actor.readyForRemoval
+                and actor.finishDeath
+            then
+                actor:finishDeath()
             end
         end
 

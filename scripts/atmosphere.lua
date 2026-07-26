@@ -7,8 +7,8 @@ local nestsMod = require "scripts.nests"
 local atmosphere = {}
 
 local TILE = 16
-local FOUNTAIN_CX = 14.5 * TILE
-local FOUNTAIN_CY = 11.5 * TILE
+local FOUNTAIN_CX = 15 * TILE
+local FOUNTAIN_CY = 12 * TILE
 
 local particles = {}
 local drips = {}
@@ -18,8 +18,8 @@ local t = 0
 local sealFlash = 0
 
 local TORCHES = {
-    { 22.5 * TILE, 4.5 * TILE },
-    { 27.5 * TILE, 4.5 * TILE },
+    { 22.5 * TILE, 5.5 * TILE },
+    { 27.5 * TILE, 5.5 * TILE },
     { 26.5 * TILE, 10.5 * TILE },
     { 22.5 * TILE, 18.5 * TILE },
 }

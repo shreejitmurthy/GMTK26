@@ -2,6 +2,7 @@
 
 local physics = require "scripts.physics"
 local countdown = require "scripts.countdown"
+local collapse = require "scripts.collapse"
 require "scripts.player"
 
 local selftest = {}
@@ -299,18 +300,33 @@ function selftest.run(playerActor, enemyActors)
         r._meleeEngaged = false
         r.wantsMeleeAttack = false
         r.attackCooldownTimer = 0
+        r.pendingAttack = false
+        r.attackWindupTimer = 0
         playerActor.hurtIFrame = 0
         r:update(1 / 60, playerActor)
         local meleeVX, meleeVY = r.collider:getLinearVelocity()
         local meleeSpeed = math.sqrt(
             meleeVX * meleeVX + meleeVY * meleeVY
         )
+        allOk = check("enemy attack telegraphs before damage",
+            r.pendingAttack
+                and r.attackFlash > 0
+                and r.attackSerial == startingAttackSerial
+                and playerActor.enemyHitCount == startingHitCount,
+            string.format("pending=%s flash=%.2f attacks=%d hits=%d",
+                tostring(r.pendingAttack), r.attackFlash,
+                r.attackSerial - startingAttackSerial,
+                playerActor.enemyHitCount - startingHitCount)) and allOk
+
+        for _ = 1, 12 do
+            r:update(1 / 60, playerActor)
+        end
         local drainedOk = true
         if liveCountdown and savedRemaining then
             drainedOk = liveCountdown:getRemaining()
                 <= savedRemaining - (playerActor.hitDamageSeconds or player.HIT_DAMAGE_SECONDS) + 0.01
         end
-        allOk = check("cornered ranger stops, faces, and hits",
+        allOk = check("cornered ranger stops, faces, and hits after telegraph",
             r._meleeEngaged
                 and r.wantsMeleeAttack
                 and meleeSpeed < 0.01
@@ -340,6 +356,8 @@ function selftest.run(playerActor, enemyActors)
         r._meleeEngaged = false
         r.wantsMeleeAttack = false
         r.attackCooldownTimer = 0
+        r.pendingAttack = false
+        r.attackWindupTimer = 0
         r.attackFlash = 0
         playerActor.enemyHitCount = startingHitCount
         playerActor.enemyHitFlash = 0
@@ -358,7 +376,7 @@ function selftest.run(playerActor, enemyActors)
 
         -- Put the ranger across the fountain oval: it is occluded, so its
         -- chosen velocity must restore LOS without closing in.
-        local blockedRangerX, blockedRangerY = 280, 200
+        local blockedRangerX, blockedRangerY = 240, 144
         r.collider:setPosition(blockedRangerX, blockedRangerY)
         r:refreshPushAnchor()
         r._backingAway = false
@@ -372,13 +390,13 @@ function selftest.run(playerActor, enemyActors)
         local closingSpeed = vx * towardX + vy * towardY
         local moving = math.sqrt(vx * vx + vy * vy)
         allOk = check("ranger retreats while restoring LOS",
-            r.hasPlayerLOS == false and moving > 0.01 and closingSpeed <= 0,
+            r.hasPlayerLOS == false and moving > 0.01 and closingSpeed <= 0.01,
             string.format("los=%s vel=%.1f,%.1f closingDot=%.1f",
                 tostring(r.hasPlayerLOS), vx, vy, closingSpeed)) and allOk
 
         -- Exercise the real collider/world loop from the ranger's blocked demo
         -- spawn and confirm that its strafe actually clears the obstruction.
-        r.collider:setPosition(rx, ry)
+        r.collider:setPosition(blockedRangerX, blockedRangerY)
         r:refreshPushAnchor()
         r._backingAway = false
         r._losGoalX, r._losGoalY = nil, nil
@@ -388,7 +406,7 @@ function selftest.run(playerActor, enemyActors)
         r.hasPlayerLOS = nil
         r:stop()
         r:syncFromCollider()
-        local startDX, startDY = rx - px, ry - py
+        local startDX, startDY = blockedRangerX - px, blockedRangerY - py
         local startDistance = math.sqrt(startDX * startDX + startDY * startDY)
         local minDistance = startDistance
         local retainedLOS = r:hasLineOfSight(px, py)
@@ -455,6 +473,8 @@ function selftest.run(playerActor, enemyActors)
         r._meleeEngaged = false
         r.wantsMeleeAttack = false
         r.attackCooldownTimer = 0
+        r.pendingAttack = false
+        r.attackWindupTimer = 0
         r.attackFlash = 0
         r.hasPlayerLOS = nil
         r:stop()
@@ -526,12 +546,129 @@ function selftest.run(playerActor, enemyActors)
         allOk = check("nest cleanse radii are tight (<=40)",
             maxR <= 40,
             string.format("maxR=%.0f", maxR)) and allOk
+
+        local protectedOk = true
+        for row = 10, 13 do
+            for col = 13, 16 do
+                protectedOk = protectedOk and collapse.isProtectedCell(col, row)
+            end
+        end
+        for _, nest in ipairs(state.nests) do
+            local col = math.floor(nest.x / 16)
+            local row = math.floor(nest.y / 16)
+            for dr = -1, 1 do
+                for dc = -1, 1 do
+                    protectedOk = protectedOk
+                        and collapse.isProtectedCell(col + dc, row + dr)
+                end
+            end
+        end
+        allOk = check("collapse protects fountain and nest footprints",
+            protectedOk and collapse.getFallenCount() == 0) and allOk
     end
     local sampleEnemy = enemyActors and enemyActors[1]
     if sampleEnemy then
         allOk = check("enemy has hp for kill→+1s loop",
             (sampleEnemy.hp or 0) >= 1,
             string.format("hp=%s", tostring(sampleEnemy.hp))) and allOk
+
+        local savedHP = sampleEnemy.hp
+        local savedFlash = sampleEnemy.hurtFlash
+        local savedAttackHitbox = playerActor.attackHitbox
+        local savedSwingHits = playerActor.swingHitEnemies
+        local fakeEnemyHit = {
+            getObject = function()
+                return sampleEnemy
+            end,
+        }
+        playerActor.attackHitbox = {
+            enter = function()
+                return true
+            end,
+            getEnterCollisionData = function()
+                return { collider = fakeEnemyHit }
+            end,
+        }
+        playerActor.swingHitEnemies = {}
+        playerActor:pollAttackHits()
+        playerActor:pollAttackHits()
+        allOk = check("sword registers an enemy once per swing",
+            sampleEnemy.hp == savedHP - 1,
+            string.format("hp %d→%d", savedHP, sampleEnemy.hp)) and allOk
+        sampleEnemy.hp = savedHP
+        sampleEnemy.hurtFlash = savedFlash
+        playerActor.attackHitbox = savedAttackHitbox
+        playerActor.swingHitEnemies = savedSwingHits
+    end
+
+    local expectedSprites = {
+        chaser = "res/images/enemies/chaser.png",
+        fleer = "res/images/enemies/fleer.png",
+        keeper = "res/images/enemies/keeper.png",
+        ranger = "res/images/enemies/ranger.png",
+    }
+    local presentationConfigOk = true
+    local presentationImagesLoaded = true
+    for typeId, e in pairs(byType) do
+        presentationConfigOk = presentationConfigOk
+            and e.spritePath == expectedSprites[typeId]
+            and e.hitW == 14
+            and e.hitH == 14
+        presentationImagesLoaded = presentationImagesLoaded
+            and e.img ~= nil
+            and e.img:getWidth() == 32
+            and e.img:getHeight() == 32
+    end
+    allOk = check("enemy art cannot resize gameplay hitboxes",
+        presentationConfigOk) and allOk
+    allOk = check("all four 32x32 enemy images loaded",
+        presentationImagesLoaded) and allOk
+    local drawOrder = {
+        byType.chaser,
+        byType.fleer,
+        byType.keeper,
+        byType.ranger,
+    }
+    local drawOk, drawError = pcall(function()
+        for i = 1, 9 do
+            drawOrder[(i - 1) % #drawOrder + 1]:draw()
+        end
+    end)
+    local drawDetail = nil
+    if not drawOk then
+        drawDetail = tostring(drawError)
+    end
+    allOk = check("nine-enemy presentation draw smoke",
+        drawOk,
+        drawDetail) and allOk
+
+    if enemy and physics.arena then
+        local savedState = rawget(_G, "state")
+        _G.state = nil
+        local deathProbe = enemy:new(physics.arena.cx, physics.arena.cy, {
+            type = "fleer",
+            hp = 1,
+        })
+        deathProbe:onHitByPlayer()
+        local beganWithPhysics = deathProbe.dying
+            and deathProbe.collider ~= nil
+            and deathProbe.hurtbox ~= nil
+        deathProbe:update(0.1)
+        local heldDuringFade = not deathProbe.dead
+            and not deathProbe.readyForRemoval
+            and deathProbe.collider ~= nil
+        deathProbe:update(0.11)
+        deathProbe:finishDeath()
+        local destroyedAfterFade = deathProbe.dead
+            and deathProbe.collider == nil
+            and deathProbe.hurtbox == nil
+        local timerAfterDeath = deathProbe.deathTimer
+        deathProbe:update(1)
+        local deadUpdateSkipped = deathProbe.deathTimer == timerAfterDeath
+        _G.state = savedState
+        allOk = check("death fade precedes collider destruction",
+            beganWithPhysics and heldDuringFade and destroyedAfterFade) and allOk
+        allOk = check("dead enemy update is inert", deadUpdateSkipped) and allOk
     end
 
     print(allOk and "[physics_selftest] ALL PASS" or "[physics_selftest] SOME FAILED")

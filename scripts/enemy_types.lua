@@ -6,6 +6,7 @@ local enemy_types = {}
 
 enemy_types.defaults = {
     chaser = {
+        spritePath = "res/images/enemies/chaser.png",
         speed = 75,
         aggroRange = 140,
         stopDistance = 28,
@@ -19,6 +20,7 @@ enemy_types.defaults = {
         letter = "C",
     },
     fleer = {
+        spritePath = "res/images/enemies/fleer.png",
         speed = 95,
         fleeRange = 90,
         fleeDeadzone = 10,
@@ -26,6 +28,7 @@ enemy_types.defaults = {
         letter = "F",
     },
     keeper = {
+        spritePath = "res/images/enemies/keeper.png",
         speed = 70,
         aggroRange = 160,
         preferredDistance = 70,
@@ -37,6 +40,7 @@ enemy_types.defaults = {
         letter = "K",
     },
     ranger = {
+        spritePath = "res/images/enemies/ranger.png",
         speed = 65,
         aggroRange = 190,
         safeDistance = 95,
@@ -108,6 +112,7 @@ function enemy_types.apply(e, options)
     local defaults = enemy_types.defaults[typeId]
 
     e.enemyType = typeId
+    e.spritePath = options.spritePath or defaults.spritePath
     e.color = {
         defaults.color[1],
         defaults.color[2],

@@ -148,7 +148,7 @@ local function edgeScore(col, row)
 end
 
 local function fountainDist(col, row)
-    local fx, fy = 14.5, 11.5
+    local fx, fy = 15, 12
     local dx, dy = col + 0.5 - fx, row + 0.5 - fy
     return math.sqrt(dx * dx + dy * dy)
 end
@@ -527,6 +527,11 @@ function collapse.isFallenCell(col, row)
         return false
     end
     return cells[idx(col, row)].state == FALLEN
+end
+
+--- Read-only acceptance hook for map/collapse protection tests.
+function collapse.isProtectedCell(col, row)
+    return inBounds(col, row) and protected[idx(col, row)] == true
 end
 
 return collapse
