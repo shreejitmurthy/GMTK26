@@ -5,6 +5,7 @@ require "scripts.actor"
 local physics = require "scripts.physics"
 local enemy_types = require "scripts.enemy_types"
 local enemy_attacks = require "scripts.enemy_attacks"
+local sound_effects = require "scripts.sound_effects"
 
 enemy = {}
 setmetatable(enemy, { __index = actor })
@@ -346,6 +347,7 @@ function enemy:die()
     self.deathTimer = self.deathDuration or DEATH_DURATION
     self.wantsMeleeAttack = false
     enemy_attacks.cancel(self)
+    sound_effects.playEnemyKilled(self.enemyType == "keeper")
     if self.collider then
         self.collider:setLinearVelocity(0, 0)
     end
@@ -432,6 +434,7 @@ function enemy:onHitByPlayer(swingSerial)
     local ex, ey = self.pos.x, self.pos.y
     self.hp = math.max(0, (self.hp or self.maxHp or 1) - 1)
     self.hurtFlash = HURT_FLASH_DURATION
+    sound_effects.playEnemyHitImpact()
     print(string.format(
         "[hit] PlayerAttack hit %s (%s @ %.1f, %.1f) hp=%d",
         self.enemyType or "enemy",

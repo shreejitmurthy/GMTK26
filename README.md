@@ -164,7 +164,9 @@ As plague tolerance fails, floor tiles literally fall away — unique pressure v
 - **Default duration: 90 seconds** (jam feel; tune ~60–120).
 - Display: large **top-center** clock (`M:SS`, tenths under 10s) in Italianno cursive + thin segmented **Plague Tolerance** fuse (width = `getRatio()`, same color family — not a heart HP bar).
 - Feedback: `:damage()` sets `damagePulse` (~0.4s) — digit/fuse flash + floating `-Xs`. Ratio < 0.15 → subtle screen-edge tint.
-- Urgency: warmer tint below 25% remaining; subtle pulse below 10%.
+- Urgency: warmer tint below 25% remaining; subtle pulse below 10%. During
+  the final 30 seconds, a plague vignette creeps inward while a low-pass
+  filter progressively muffles music and sound effects.
 - **Combat drain (done):** `player:onHitByEnemy` → `state:applyPlayerDamage(amount, source)` → `countdown:damage`. Default hit: **`PLAYER_HIT_DAMAGE_SECONDS` / `player.HIT_DAMAGE_SECONDS` = 5**. I-frames: **`PLAYER_HURT_IFRAME` / `player.HURT_IFRAME` = 0.6s** (`player.hurtIFrame`). Player sword → enemy does **not** drain the player timer.
 - **Debug:** **H** → −3s (bypass i-frames); **G** → +5s; **V** → force one floor crack near the player.
 - At 0: `state.extracted = true`, show **EXTRACTED**, freeze player/enemy AI, stop further damage; Esc still quits.

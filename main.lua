@@ -15,6 +15,8 @@ local encounter_director = require "scripts.encounter_director"
 local enemy_test = require "scripts.enemy_test"
 local enemy_attacks = require "scripts.enemy_attacks"
 local game_flow = require "scripts.game_flow"
+local sound_effects = require "scripts.sound_effects"
+local plague_senses = require "scripts.plague_senses"
 require "scripts.player"
 require "scripts.sword"
 require "scripts.slash_trail"
@@ -50,9 +52,9 @@ state = {
     hudTimerFont = nil,
     hudLabelFont = nil,
     hudHelpFont = nil,
-    hudTitleFont = nil,
     hudBodyFont = nil,
     hudSmallFont = nil,
+    hudSubtitleFont = nil,
     gameMap = nil,
     extractReason = nil,
     enemyTestMode = false,
@@ -60,6 +62,7 @@ state = {
     winReady = false,
     winTimer = 0,
     lastFrameDt = 0,
+    plagueSenseIntensity = 0,
 }
 
 function state.onAfterFloor()
@@ -327,6 +330,48 @@ function state:update(dt)
     end
 end
 
+function state:updateSoundEffects(dt)
+    local playerActor = self:getActor("player")
+    local active = self.gameState == GAME_STATE.GAMEPLAY
+        and not self.extracted
+        and not self.sectorCleared
+    local walking = false
+
+    if active
+        and playerActor
+        and playerActor.collider
+        and not playerActor.isDashing
+    then
+        walking = playerActor.hasMovementInput == true
+    end
+
+    local sensoryActive = self.countdown
+        and (
+            self.gameState == GAME_STATE.GAMEPLAY
+            or self.gameState == GAME_STATE.PAUSE
+        )
+        and not self.sectorCleared
+    local targetIntensity = 0
+    if sensoryActive then
+        targetIntensity = plague_senses.getTargetIntensity(
+            self.countdown:getRemaining()
+        )
+    end
+    self.plagueSenseIntensity = plague_senses.approach(
+        self.plagueSenseIntensity,
+        targetIntensity,
+        dt
+    )
+
+    sound_effects.update(dt, {
+        active = active,
+        dead = self.extracted,
+        walking = walking,
+        remaining = self.countdown and self.countdown:getRemaining() or nil,
+        plagueIntensity = self.plagueSenseIntensity,
+    })
+end
+
 function state:drawActors(perspectiveBoundary, drawInFront)
     local drawList = {}
     for index, sceneActor in ipairs(self.actors) do
@@ -374,25 +419,6 @@ function state:drawActors(perspectiveBoundary, drawInFront)
     end
 end
 
---- Soft edge tint when plague tolerance is nearly spent (ratio < 0.15).
-local function drawPlagueEdgeTint(sw, sh, strength)
-    if strength <= 0 then
-        return
-    end
-    local edge = math.floor(math.min(sw, sh) * 0.12)
-    local layers = 5
-    for i = 0, layers - 1 do
-        local t = i / layers
-        local band = edge / layers
-        local a = 0.07 * strength * (1 - t)
-        love.graphics.setColor(0.55, 0.08, 0.06, a)
-        love.graphics.rectangle("fill", 0, i * band, sw, band)
-        love.graphics.rectangle("fill", 0, sh - (i + 1) * band, sw, band)
-        love.graphics.rectangle("fill", i * band, edge, band, sh - 2 * edge)
-        love.graphics.rectangle("fill", sw - (i + 1) * band, edge, band, sh - 2 * edge)
-    end
-end
-
 function state:drawHud()
     local sw = love.graphics.getWidth()
     local sh = love.graphics.getHeight()
@@ -402,11 +428,6 @@ function state:drawHud()
     if self.countdown then
         local ratio = self.countdown:getRatio()
         local dmgPulse, dmgAmount = self.countdown:getDamagePulse()
-
-        if ratio < 0.15 and not self.extracted then
-            local urgency = 1 - (ratio / 0.15)
-            drawPlagueEdgeTint(sw, sh, urgency)
-        end
 
         local r, g, b, a = 0.96, 0.90, 0.78, 1
         if ratio < 0.25 then
@@ -583,7 +604,7 @@ function state:drawHud()
         and self.gameState == GAME_STATE.GAMEPLAY
     then
         local msg = "Hold E to cleanse"
-        local font = self.hudHelpFont or prevFont
+        local font = self.hudSubtitleFont or self.hudHelpFont or prevFont
         local tw = font:getWidth(msg)
         local th = font:getHeight()
         local bx = (sw - tw) / 2 - 18
@@ -601,6 +622,37 @@ function state:drawHud()
             0.92,
             0.78,
             1
+        )
+    end
+
+    local subtitle, subtitleAlpha = sound_effects.getNearDeathSubtitle()
+    if subtitle then
+        local font = self.hudHelpFont or prevFont
+        local textWidth = font:getWidth(subtitle)
+        local boxWidth = math.min(sw - 48, textWidth + 48)
+        local boxX = (sw - boxWidth) / 2
+        local textY = sh - font:getHeight() - 48
+        love.graphics.setColor(0.035, 0.025, 0.02, 0.72 * subtitleAlpha)
+        love.graphics.rectangle(
+            "fill",
+            boxX,
+            textY - 7,
+            boxWidth,
+            font:getHeight() + 14,
+            4,
+            4
+        )
+        game_flow.printfShadow(
+            font,
+            subtitle,
+            24,
+            textY,
+            sw - 48,
+            "center",
+            0.98,
+            0.92,
+            0.82,
+            subtitleAlpha
         )
     end
 
@@ -724,6 +776,7 @@ local function beginRun(opts)
     physics.destroy()
     physics.init()
     enemy_attacks.clearAll()
+    sound_effects.reset()
 
     state.actors = {}
     state.enemyTestMode = enemyTest
@@ -732,6 +785,7 @@ local function beginRun(opts)
     state.sectorCleared = false
     state.extracted = false
     state.extractReason = nil
+    state.plagueSenseIntensity = 0
     state._freezeCamX = nil
     state._freezeCamY = nil
     state.floats = {}
@@ -864,6 +918,8 @@ end
 
 function love.load(args)
     local argv = args or arg or {}
+    sound_effects.load()
+    plague_senses.load()
     game_flow.ensureFonts(state)
 
     -- Courtyard art reset (cobble floor + dungeon_tiles districts; fountain kept):
@@ -1006,6 +1062,7 @@ end
 
 function love.update(dt)
     state:update(dt)
+    state:updateSoundEffects(dt)
 
     local cap = state._mapReadabilityCapture
     if cap and not cap.done then
@@ -1076,6 +1133,7 @@ function love.draw()
     end
 
     atmosphere.drawGrade()
+    plague_senses.drawVignette(state.plagueSenseIntensity)
     state:drawHud()
 
     if state.gameState == GAME_STATE.PAUSE then

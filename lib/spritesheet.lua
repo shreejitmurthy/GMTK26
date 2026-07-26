@@ -93,14 +93,13 @@ function Spritesheet:newAnimation(s, f, delay)
     return Animation.new(frames, delay)
 end
 
-function Animation:update(dt)
+function Animation:update(dt, frameStep)
+    frameStep = frameStep or 1
     self.currentTime = self.currentTime + dt
     if self.currentTime >= self.delay then
         self.currentTime = self.currentTime - self.delay
-        self.currentIndex = (self.currentIndex % #self.frames) + 1
-        if self.currentIndex > #self.frames then
-            self.currentIndex = 1
-        end
+        self.currentIndex =
+            ((self.currentIndex - 1 + frameStep) % #self.frames) + 1
     end
 end
 

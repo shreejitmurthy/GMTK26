@@ -4,6 +4,7 @@
 require "scripts.actor"
 require "lib.spritesheet"
 local physics = require "scripts.physics"
+local sound_effects = require "scripts.sound_effects"
 
 player = {}
 setmetatable(player, { __index = actor })
@@ -318,6 +319,7 @@ function player:new(x, y)
     p.dashCooldown = 0
     p.dashDirection = { x = 1, y = 0 }
     p.isDashing = false
+    p.hasMovementInput = false
     p.dashSmearTimer = 0
     p.dashSmears = {}
     dashSmearShader =
@@ -381,6 +383,7 @@ function player:onHitByEnemy(source)
     self.enemyHitCount = self.enemyHitCount + 1
     self.enemyHitFlash = ENEMY_HIT_FLASH_DURATION
     self.enemyHitFlashElapsed = 0
+    sound_effects.playPlayerHit()
     if remaining ~= nil then
         print(string.format(
             "[hit] %s hit player (#%d) → %.1fs left",
@@ -498,14 +501,19 @@ function player:startSwing(targetX, targetY)
     self.aimDirection.x = fx
     self.aimDirection.y = fy
     self.animationDirection = animationDirection(fx, fy)
+    self.swingDirection = self.nextSwingDirection
+    self.nextSwingDirection = -self.nextSwingDirection
     local attackAnimationData = self.animations.attack[self.animationDirection]
     attackAnimationData.animation.currentTime = 0
-    attackAnimationData.animation.currentIndex = 1
+    if self.swingDirection < 0 then
+        attackAnimationData.animation.currentIndex =
+            #attackAnimationData.animation.frames
+    else
+        attackAnimationData.animation.currentIndex = 1
+    end
     self.current_animation_data = attackAnimationData
     self.current_animation = attackAnimationData.animation
     self.current_spritesheet = attackAnimationData.spritesheet
-    self.swingDirection = self.nextSwingDirection
-    self.nextSwingDirection = -self.nextSwingDirection
     self.swingSerial = self.swingSerial + 1
     self.hasSwung = true
     self.swinging = true
@@ -596,6 +604,7 @@ function player:startDash()
     self.isDashing = true
     self.dashSmearTimer = DASH_SMEAR_INTERVAL
     self:addDashSmear()
+    sound_effects.playDash()
     return true
 end
 
@@ -757,6 +766,7 @@ function player:update(dt)
     end
     local input = {}
     input.x, input.y = movementInput(self.controls)
+    self.hasMovementInput = input.x ~= 0 or input.y ~= 0
     local dashing = self:updateDash(dt)
 
     if input.x ~= 0 or input.y ~= 0 then
@@ -778,7 +788,9 @@ function player:update(dt)
         self.animations[animationState][self.animationDirection]
     self.current_animation = self.current_animation_data.animation
     self.current_spritesheet = self.current_animation_data.spritesheet
-    self.current_animation:update(dt)
+    local animationFrameStep =
+        self.swinging and self.swingDirection < 0 and -1 or 1
+    self.current_animation:update(dt, animationFrameStep)
     self:emitDashSmears(dt)
 
     local vx, vy

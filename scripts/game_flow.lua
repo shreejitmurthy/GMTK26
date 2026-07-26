@@ -4,6 +4,7 @@
 local game_map = require "scripts.game_map"
 local atmosphere = require "scripts.atmosphere"
 local collapse = require "scripts.collapse"
+local ui_font = require "scripts.ui_font"
 
 local flow = {}
 
@@ -29,20 +30,21 @@ local NARRATIVE_RULES = {
 }
 
 local function ensureFonts(state)
-    if state.hudTimerFont then
+    if state.hudTimerFont and state.hudSubtitleFont then
         return
     end
     local function loadScriptFont(size)
-        local font = love.graphics.newFont("res/fonts/Italianno-Regular.ttf", size)
-        font:setFilter("linear", "linear")
-        return font
+        return ui_font.new("res/fonts/Italianno-Regular.ttf", size)
     end
     state.hudTimerFont = loadScriptFont(80)
     state.hudLabelFont = loadScriptFont(34)
     state.hudHelpFont = loadScriptFont(30)
-    state.hudTitleFont = loadScriptFont(96)
     state.hudBodyFont = loadScriptFont(32)
     state.hudSmallFont = loadScriptFont(26)
+    state.hudSubtitleFont = ui_font.new(
+        "res/fonts/RobotoMono-VariableFont_wght.ttf",
+        22
+    )
 end
 
 function flow.ensureFonts(state)
@@ -268,17 +270,13 @@ end
 function flow.drawTitle(state)
     local sw, sh = love.graphics.getDimensions()
     flow.drawWorldBackdrop(state)
-    local titleFont = state.hudTitleFont or state.hudTimerFont
     local labelFont = state.hudLabelFont
     local helpFont = state.hudHelpFont
-    local title = "PLAGUE TOLERANCE"
-    local tw = titleFont:getWidth(title)
-    flow.printShadow(titleFont, title, (sw - tw) / 2, sh * 0.28, 0.96, 0.9, 0.78, 1)
     flow.printfShadow(
         labelFont,
         "Your time is your life.",
         0,
-        sh * 0.42,
+        sh * 0.36,
         sw,
         "center",
         0.9,
@@ -290,7 +288,7 @@ function flow.drawTitle(state)
         helpFont,
         "Play  ·  any key or click",
         0,
-        sh * 0.62,
+        sh * 0.56,
         sw,
         "center",
         0.92,
@@ -302,7 +300,7 @@ function flow.drawTitle(state)
         state.hudSmallFont or helpFont,
         "Esc  Quit",
         0,
-        sh * 0.70,
+        sh * 0.64,
         sw,
         "center",
         0.85,

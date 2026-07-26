@@ -1,5 +1,6 @@
-debug_font = love.graphics.newFont("res/fonts/RobotoMono-VariableFont_wght.ttf")
--- debug_font:setFilter("nearest", "nearest")
+local ui_font = require "scripts.ui_font"
+
+debug_font = ui_font.new("res/fonts/RobotoMono-VariableFont_wght.ttf", 12)
 local maxWidth = 0
 local lineHeight = debug_font:getHeight()
 local padding = 5
