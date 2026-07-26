@@ -100,10 +100,11 @@ local function buildDecalsA()
             local nearNest = math.abs(col - 4.5) + math.abs(row - 14.5) <= 5
             local boundaryDecay = col <= 2 or row >= 20
             local modulus = (nearNest or boundaryDecay) and 5 or 9
+            -- Soot only — dark floor chips read as fake walls on busy cobble.
             if ((col * 5 + row * 7) % modulus) == 0 then
                 put(data, col, row, pick(T.floorSoot, col, row))
             elseif nearNest and ((col + row * 2) % 7) == 0 then
-                put(data, col, row, pick(T.floorDark, col, row))
+                put(data, col, row, pick(T.floorSoot, col, row))
             end
         end
     end
@@ -147,7 +148,7 @@ local function buildDecalsC()
             local nearNest = math.abs(col - 24.5) + math.abs(row - 12.5) <= 5
             local atBoundary = col >= 27 or row <= 3
             if (nearNest or atBoundary) and ((col * 3 + row * 5) % 7) == 0 then
-                put(data, col, row, pick(T.floorDark, col, row))
+                put(data, col, row, pick(T.floorSoot, col, row))
             end
         end
     end

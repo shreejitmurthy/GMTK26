@@ -6,13 +6,34 @@ local game_map = {}
 
 -- Drawn under actors. Fountain is perspective-sorted with actors.
 -- Decals A/B/C + Props are optional nest-district overlays on the plaza.
+-- Floor/decals first, then solid bases + darkened Props/Walls so blockers read.
+game_map.FLOOR_DECAL_LAYERS = {
+    "Floor Layer",
+    "Decals A",
+    "Decals B",
+    "Decals C",
+}
+
+game_map.SOLID_TILE_LAYERS = {
+    "Props",
+    -- Legacy / optional names
+    "Walls Layer",
+    "Props Layer",
+}
+
+-- Multiplicative draw tints (RGB). Cobble floor stays full-bright; solids darken.
+game_map.LAYER_DRAW_TINT = {
+    ["Props"] = { 0.55, 0.5, 0.46 },
+    ["Props Layer"] = { 0.55, 0.5, 0.46 },
+    ["Walls Layer"] = { 0.32, 0.3, 0.28 },
+}
+
 game_map.BELOW_ACTOR_LAYERS = {
     "Floor Layer",
     "Decals A",
     "Decals B",
     "Decals C",
     "Props",
-    -- Legacy / optional names
     "Walls Layer",
     "Props Layer",
 }
@@ -285,17 +306,89 @@ function game_map.update(map, dt)
 end
 
 local function drawLayers(map, layerNames)
-    love.graphics.setColor(1, 1, 1, 1)
     for _, layerName in ipairs(layerNames) do
         local layer = map.layers[layerName]
         if layer and layer.visible and layer.opacity > 0 then
+            local tint = game_map.LAYER_DRAW_TINT[layerName]
+            if tint then
+                love.graphics.setColor(tint[1], tint[2], tint[3], 1)
+            else
+                love.graphics.setColor(1, 1, 1, 1)
+            end
             map:drawLayer(layer)
         end
     end
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+--- Dark footprints under Rectangle Colliders so every Wall solid has a silhouette
+--- even when prop art is light against busy cobble. Torches/decals stay untinted.
+function game_map.drawSolidBases(map)
+    local layer = map.layers["Rectangle Colliders"]
+    if not layer or not layer.objects then
+        return
+    end
+    for _, object in ipairs(layer.objects) do
+        local shape = object.shape
+        if (not shape or shape == "rectangle")
+            and (object.width or 0) > 0
+            and (object.height or 0) > 0
+        then
+            local x, y = object.x, object.y
+            local w, h = object.width, object.height
+            -- Soft pad so the base reads larger/darker than the thin foot collider.
+            -- Warm dark brown (not pitch black) so solids never read as abyss holes.
+            local pad = 2
+            love.graphics.setColor(0.16, 0.11, 0.08, 0.88)
+            love.graphics.rectangle("fill", x - pad, y - pad - 4, w + pad * 2, h + pad * 2 + 5)
+            love.graphics.setColor(0.08, 0.05, 0.04, 0.95)
+            love.graphics.rectangle("line", x - pad, y - pad - 4, w + pad * 2, h + pad * 2 + 5)
+        end
+    end
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function game_map.drawBelowActors(map)
-    drawLayers(map, game_map.BELOW_ACTOR_LAYERS)
+    drawLayers(map, game_map.FLOOR_DECAL_LAYERS)
+    game_map.drawSolidBases(map)
+    drawLayers(map, game_map.SOLID_TILE_LAYERS)
+end
+
+--- Every rectangle Wall collider center must sit on a Props tile (no invisible walls).
+function game_map.auditColliderPropCoverage(map)
+    local props = map and map.layers and map.layers["Props"]
+    local rects = map and map.layers and map.layers["Rectangle Colliders"]
+    if not props or not rects or not rects.objects then
+        return false, { "missing Props or Rectangle Colliders" }
+    end
+    local mismatches = {}
+    for _, object in ipairs(rects.objects) do
+        local shape = object.shape
+        if (not shape or shape == "rectangle")
+            and (object.width or 0) > 0
+            and (object.height or 0) > 0
+        then
+            local cx = object.x + object.width * 0.5
+            local cy = object.y + object.height * 0.5
+            local col = math.floor(cx / map.tilewidth)
+            local row = math.floor(cy / map.tileheight)
+            local rowData = props.data and props.data[row + 1]
+            local tile = rowData and rowData[col + 1]
+            local gid = tile and (tile.gid or tile) or 0
+            if type(gid) == "table" then
+                gid = gid.gid or 0
+            end
+            if not gid or gid == 0 then
+                mismatches[#mismatches + 1] = string.format(
+                    "%s @ tile %d,%d (no Props gid)",
+                    object.name or "wall",
+                    col,
+                    row
+                )
+            end
+        end
+    end
+    return #mismatches == 0, mismatches
 end
 
 function game_map.drawPerspectiveActors(map)

@@ -870,11 +870,15 @@ function physics.clampColliderToPlayable(collider)
 end
 
 --- Draw stub arena walls so solid blockers are visible without F1.
+--- Dark charcoal so stubs separate from victorian cobble (not mid-grey floor twins).
 function physics.drawWalls()
-    love.graphics.setColor(0.32, 0.32, 0.35, 1)
+    love.graphics.setColor(0.12, 0.11, 0.1, 0.92)
     for _, wall in ipairs(physics.walls) do
         if wall.drawW and not wall.isBoundary then
             love.graphics.rectangle("fill", wall.drawX, wall.drawY, wall.drawW, wall.drawH)
+            love.graphics.setColor(0.05, 0.04, 0.04, 1)
+            love.graphics.rectangle("line", wall.drawX, wall.drawY, wall.drawW, wall.drawH)
+            love.graphics.setColor(0.12, 0.11, 0.1, 0.92)
         end
     end
     love.graphics.setColor(1, 1, 1, 1)

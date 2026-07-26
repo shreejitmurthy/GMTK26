@@ -1,0 +1,37 @@
+Map readability — before/after notes (Prompt: map + void fairness)
+
+BEFORE
+- Wall/prop art sat at full brightness on busy victorian cobble → blockers hard to parse.
+- Interior Wall colliders relied on light prop tiles alone (no silhouette base).
+- Fallen cells were flat black rectangles → same value as cobble grout (looked like floor paint).
+- Dark floor-chip decals (gid 264–268) could fake solid walls.
+- Nest isolation was only soft corridor weighting; voids could cut a nest off early.
+
+AFTER (verified)
+Obstacles
+- Props tint ~0.55 and Walls Layer ~0.32 (multiplicative) so masonry/props sit darker than cobble.
+- Charcoal-brown footprint under every Rectangle Collider (matches F1 white boxes).
+- auditColliderPropCoverage: 8/8 interior Wall rects have Props gid at center — 0 mismatches.
+- Boundary walls remain on the rim under Walls Layer (not invisible interior walls).
+- Decals A/C soot-only (no dark floor chips). Regenerated via --patch-nests.
+
+Abyss
+- Fallen cells: warm masonry lip + recessed shelf + pitch core + N/S depth shading.
+- Overlay re-stamp after falling quads so holes stay readable mid-drop.
+- Cracking telegraph: amber outline + crack lines (still obvious).
+- Player center on fallen → EXTRACTED (abyss) + short rumble + “EXTRACTED” float.
+- Enemies on fallen cells destroyed with reward=false (no +time).
+
+Fairness
+- Fountain stamp protected; nest pads ±2 while ratio >= 0.3, else ±1.
+- Fountain→nest and nest→nest corridors while ratio >= 0.22.
+- Crack picks reject cells that would isolate an uncleansed nest from the fountain.
+
+Artifacts
+- res/debug/map_readability_after.png — F1 on, two forced fallen cells near player.
+- res/debug/map_readability_void_zoom.png — nearest-neighbor zoom of rimmed voids.
+
+Commands
+- love . -- --selftest-quit
+- love . -- --map-readability-quit
+- In-game: F1 colliders, V crack near player

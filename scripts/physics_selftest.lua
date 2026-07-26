@@ -3,6 +3,8 @@
 local physics = require "scripts.physics"
 local countdown = require "scripts.countdown"
 local collapse = require "scripts.collapse"
+local game_map = require "scripts.game_map"
+require "scripts.enemy" -- global `enemy` module (no return value)
 require "scripts.player"
 
 local selftest = {}
@@ -551,6 +553,102 @@ function selftest.run(playerActor, enemyActors)
         end
         allOk = check("collapse protects fountain and nest footprints",
             protectedOk and collapse.getFallenCount() == 0) and allOk
+
+        if state.gameMap then
+            local coverOk, mismatches = game_map.auditColliderPropCoverage(state.gameMap)
+            allOk = check(
+                "every rectangle Wall collider has a Props silhouette",
+                coverOk,
+                (not coverOk and mismatches) and table.concat(mismatches, "; ") or nil
+            ) and allOk
+        end
+
+        -- Abyss fairness: player center on fallen cell → EXTRACTED (abyss).
+        local playerForAbyss = state:getActor("player")
+        if playerForAbyss and playerForAbyss.collider then
+            local savedX = playerForAbyss.collider:getX()
+            local savedY = playerForAbyss.collider:getY()
+            local savedExtracted = state.extracted
+            local savedReason = state.extractReason
+            local function findFreeCell()
+                for row = 2, 20 do
+                    for col = 2, 27 do
+                        if not collapse.isProtectedCell(col, row)
+                            and not collapse.isFallenCell(col, row)
+                            and not collapse.isCrackingCell(col, row)
+                        then
+                            return col, row
+                        end
+                    end
+                end
+                return nil, nil
+            end
+            local fallCol, fallRow = findFreeCell()
+            local extractOk = false
+            if fallCol then
+                playerForAbyss.collider:setPosition(
+                    fallCol * 16 + 8,
+                    fallRow * 16 + 8
+                )
+                playerForAbyss.pos.x = fallCol * 16 + 8
+                playerForAbyss.pos.y = fallRow * 16 + 8
+                state.extracted = false
+                state.extractReason = nil
+                collapse.debugForceFallAt(fallCol, fallRow, state)
+                extractOk = state.extracted == true and state.extractReason == "abyss"
+            end
+            allOk = check(
+                "player center on fallen cell → EXTRACTED (abyss)",
+                extractOk,
+                fallCol and string.format("cell=%d,%d reason=%s", fallCol, fallRow, tostring(state.extractReason))
+                    or "no free cell"
+            ) and allOk
+
+            -- Enemy on fallen cell destroyed with no time reward.
+            local rewardBefore = state.countdown and state.countdown:getRemaining() or 0
+            local enemyCol, enemyRow = findFreeCell()
+            local voidEnemyOk = false
+            if enemyCol and state.countdown then
+                state.extracted = false
+                state.extractReason = nil
+                -- Park player off the void cell so the probe fall does not EXTRACT.
+                playerForAbyss.collider:setPosition(savedX, savedY)
+                playerForAbyss.pos.x = savedX
+                playerForAbyss.pos.y = savedY
+                local probe = enemy:new(
+                    enemyCol * 16 + 8,
+                    enemyRow * 16 + 8,
+                    { type = "fleer" }
+                )
+                probe.killRewardSeconds = 9
+                state.actors[#state.actors + 1] = probe
+                collapse.debugForceFallAt(enemyCol, enemyRow, state)
+                local rewardAfter = state.countdown:getRemaining()
+                local gone = probe.dead == true or probe.collider == nil
+                voidEnemyOk = gone
+                    and nearlyEqual(rewardAfter, rewardBefore, 0.05)
+                    and probe.killRewardGranted ~= true
+                if not gone and probe.destroyNow then
+                    probe:destroyNow({ reward = false })
+                end
+            end
+            allOk = check(
+                "enemy on fallen cell destroyed without time reward",
+                voidEnemyOk
+            ) and allOk
+
+            -- Restore playable state after abyss probes.
+            state.extracted = savedExtracted
+            state.extractReason = savedReason
+            if state.countdown and state.countdown.resume then
+                state.countdown:resume()
+            elseif state.countdown then
+                state.countdown.paused = false
+            end
+            playerForAbyss.collider:setPosition(savedX, savedY)
+            playerForAbyss.pos.x = savedX
+            playerForAbyss.pos.y = savedY
+        end
     end
     local sampleEnemy = enemyActors and enemyActors[1]
     if sampleEnemy then

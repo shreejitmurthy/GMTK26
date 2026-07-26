@@ -59,6 +59,7 @@ end
 
 function state.onAfterActors()
     collapse.drawFalling()
+    collapse.drawFallenOverlay()
 end
 
 -- STATE
@@ -260,26 +261,36 @@ function state:update(dt)
             end
         end
 
-        physics.update(dt)
-        physics.clampAllEnemiesToPlayable()
-        if playerActor and playerActor.collider then
-            physics.clampColliderToPlayable(playerActor.collider)
-        end
-
-        if not frozen and playerActor and playerActor.pollAttackHits then
-            playerActor:pollAttackHits()
-        end
-
-        -- Sword / trails sync from the player pose — they have no collider.
-        for _, actor in ipairs(self.actors) do
-            if actor.syncFromCollider then
-                actor:syncFromCollider(dt)
+        -- Freeze the sim on EXTRACTED / clear — further world steps cause camera jitter
+        -- (soft contact / clamps micro-nudging the player while lookAt follows).
+        if not frozen then
+            physics.update(dt)
+            physics.clampAllEnemiesToPlayable()
+            if playerActor and playerActor.collider then
+                physics.clampColliderToPlayable(playerActor.collider)
             end
-        end
 
-        if playerActor and cam then
-            local rx, ry = collapse.getRumble()
-            cam:lookAt(playerActor.pos.x + rx, playerActor.pos.y + ry)
+            if playerActor and playerActor.pollAttackHits then
+                playerActor:pollAttackHits()
+            end
+
+            for _, actor in ipairs(self.actors) do
+                if actor.syncFromCollider then
+                    actor:syncFromCollider(dt)
+                end
+            end
+
+            if playerActor and cam then
+                cam:lookAt(playerActor.pos.x, playerActor.pos.y)
+                self._freezeCamX = nil
+                self._freezeCamY = nil
+            end
+        elseif playerActor and cam then
+            if not self._freezeCamX then
+                self._freezeCamX = playerActor.pos.x
+                self._freezeCamY = playerActor.pos.y
+            end
+            cam:lookAt(self._freezeCamX, self._freezeCamY)
         end
     end
 end
@@ -690,6 +701,8 @@ local function beginRun(opts)
     state.sectorCleared = false
     state.extracted = false
     state.extractReason = nil
+    state._freezeCamX = nil
+    state._freezeCamY = nil
     state.floats = {}
     state.hintTime = enemyTest and 0 or 4
     atmosphere.load(state.nests)
@@ -830,8 +843,9 @@ function love.load(args)
     end
 
     local enemyTest = argvHas(argv, "--enemy-test")
+    local mapReadability = argvHas(argv, "--map-readability-quit")
     local playerActor = select(1, beginRun({
-        runPhysicsSelftest = not enemyTest,
+        runPhysicsSelftest = not enemyTest and not mapReadability,
         enemyTest = enemyTest,
     }))
 
@@ -864,10 +878,50 @@ function love.load(args)
     if argvHas(argv, "--selftest-quit") then
         love.event.quit()
     end
+
+    -- Capture map readability frames (F1 colliders + forced nearby cracks → voids).
+    --   love . -- --map-readability-quit
+    if argvHas(argv, "--map-readability-quit") then
+        state._mapReadabilityCapture = {
+            frame = 0,
+            done = false,
+        }
+        physics.debug = true
+        DEBUG = true
+        print("[map_readability] capture armed (F1 on, forced cracks)")
+    end
 end
 
 function love.update(dt)
     state:update(dt)
+
+    local cap = state._mapReadabilityCapture
+    if cap and not cap.done then
+        cap.frame = cap.frame + 1
+        if cap.frame == 3 then
+            collapse.debugCrackNearPlayer(state)
+            collapse.debugCrackNearPlayer(state)
+        elseif cap.frame == 10 then
+            -- Instantly drop any cracking cells so abyss depth is visible.
+            local dropped = 0
+            for row = 0, 23 do
+                for col = 0, 29 do
+                    if collapse.isCrackingCell(col, row) then
+                        if collapse.debugForceFallAt(col, row, state) then
+                            dropped = dropped + 1
+                        end
+                    end
+                end
+            end
+            print(string.format(
+                "[map_readability] forced %d falls (fallen total %d)",
+                dropped,
+                collapse.getFallenCount()
+            ))
+        elseif cap.frame == 40 and not cap.queuedShot then
+            cap.queuedShot = true
+        end
+    end
 end
 
 function love.draw()
@@ -902,6 +956,40 @@ function love.draw()
 
     atmosphere.drawGrade()
     state:drawHud()
+
+    local cap = state._mapReadabilityCapture
+    if cap and cap.queuedShot and not cap.done then
+        cap.done = true
+        love.graphics.captureScreenshot(function(imageData)
+            local path = "map_readability_after.png"
+            imageData:encode("png", path)
+            local notes = table.concat({
+                "Map readability capture (after Prompt map/void polish)",
+                "",
+                "Obstacles:",
+                "- Props/Walls Layer drawn with darker multiplicative tints",
+                "- Rectangle Colliders get charcoal silhouette bases under props",
+                "- auditColliderPropCoverage: every Wall rect center sits on a Props tile",
+                "- Boundary walls remain on the rim under Walls Layer tiles (not invisible interior)",
+                "",
+                "Abyss:",
+                "- Fallen cells: rim + inset depth ring + near-black core (not flat black cobble)",
+                "- Cracking telegraph: amber outline + crack lines (still obvious)",
+                "- Player center on fallen → EXTRACTED (abyss); enemies voided with no +time",
+                "",
+                "Fairness:",
+                "- Fountain + nest pads protected; nest approach corridors until late",
+                "- Crack picks reject cells that would isolate uncleansed nests from fountain",
+                "",
+                "Verify: F1 overlays visible in this shot; forced cracks near player have fallen.",
+                "Controls: V = crack near player; F1 = colliders.",
+            }, "\n")
+            love.filesystem.write("map_readability_notes.txt", notes)
+            print("[map_readability] wrote " .. love.filesystem.getSaveDirectory() .. "/" .. path)
+            print("[map_readability] wrote map_readability_notes.txt")
+            love.event.quit()
+        end)
+    end
 end
 
 local function startPlayerSwingAt(screenX, screenY)

@@ -151,10 +151,10 @@ As plague tolerance fails, floor tiles literally fall away — unique pressure v
 | Rule | Detail |
 |---|---|
 | Telegraph | **1.0s** crack overlay + shake; death only after the tile falls |
-| Drop | Tile quad falls off-screen; cell becomes pure-black abyss |
+| Drop | Tile quad falls off-screen; cell becomes a rimmed abyss hole (not flat black cobble) |
 | Death | Player center on a **fallen** cell → **EXTRACTED** (abyss). Not a soft shove. |
-| Protected | Fountain stamp (cols 13–16, rows 10–13) + nest centers (±1 tile) never collapse |
-| Fairness | Never starts cracking under the player (Chebyshev ≥ 2). Nest corridors protected until ratio &lt; 0.35. Cap ~48% fallen. |
+| Protected | Fountain stamp (cols 13–16, rows 10–13) + nest pads (±1–2) never collapse |
+| Fairness | Never starts cracking under the player (Chebyshev ≥ 2). Nest approach corridors + no-isolation BFS until late. Cap ~48% fallen. |
 | Escalation | First wave at **t=20s** or ratio &lt; 0.85 (whichever first). Wave size/interval scale with `(1 - ratio)` + uncleansed nests. |
 | Debug | **V** forces one crack near the player (not underfoot) |
 
