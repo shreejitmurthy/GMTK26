@@ -939,6 +939,37 @@ local function spawnBlockedAt(cx, cy, halfW, halfH)
     return #hits > 0
 end
 
+--- True if an enemy-sized AABB is inside the playable arena and clear of Walls/props.
+function physics.isSpawnClear(cx, cy, halfW, halfH)
+    if not physics.world then
+        return false
+    end
+    halfW = halfW or 8
+    halfH = halfH or 8
+    local arena = physics.arena
+    if arena then
+        if cx - halfW < arena.innerLeft
+            or cx + halfW > arena.innerRight
+            or cy - halfH < arena.innerTop
+            or cy + halfH > arena.innerBottom
+        then
+            return false
+        end
+    end
+    return not spawnBlockedAt(cx, cy, halfW, halfH)
+end
+
+--- Tear down the Windfield world so a fresh physics.init() can rebuild a run.
+function physics.destroy()
+    if physics.world then
+        physics.world:destroy()
+        physics.world = nil
+    end
+    physics.walls = {}
+    physics.enemies = {}
+    physics.arena = nil
+end
+
 --- Pick a clear point inside the stub arena, away from walls / player / prior spawns.
 function physics.pickSpawnPoint(opts)
     opts = opts or {}

@@ -11,6 +11,9 @@ local game_map = require "scripts.game_map"
 local atmosphere = require "scripts.atmosphere"
 local nests = require "scripts.nests"
 local collapse = require "scripts.collapse"
+local encounter_director = require "scripts.encounter_director"
+local enemy_test = require "scripts.enemy_test"
+local enemy_attacks = require "scripts.enemy_attacks"
 require "scripts.player"
 require "scripts.sword"
 require "scripts.slash_trail"
@@ -47,6 +50,7 @@ state = {
     hudHelpFont = nil,
     gameMap = nil,
     extractReason = nil,
+    enemyTestMode = false,
 }
 
 function state.onAfterFloor()
@@ -59,7 +63,9 @@ end
 
 -- STATE
 function state:init(...)
-    self.canvas = love.graphics.newCanvas()
+    if not self.canvas then
+        self.canvas = love.graphics.newCanvas()
+    end
     local args = { ... }
     for _, actor in ipairs(args) do
         self.actors[#self.actors + 1] = actor
@@ -103,15 +109,20 @@ function state:onEnemyKilled(enemyActor)
         self:removeActor(enemyActor)
         return
     end
-    self.countdown:addTime(1)
+    local reward = enemyActor.killRewardSeconds
+        or encounter_director.timeRewardFor(enemyActor.enemyType)
+    self.countdown:addTime(reward)
     local px, py = enemyActor.pos.x, enemyActor.pos.y - 10
     local playerActor = self:getActor("player")
     if playerActor then
         px, py = playerActor.pos.x, playerActor.pos.y - 14
     end
-    self:pushFloat("+1s", px, py, 0.45, 0.95, 0.55, 0.85)
+    local label = string.format("+%.1fs", reward)
+    self:pushFloat(label, px, py, 0.45, 0.95, 0.55, 0.85)
     print(string.format(
-        "[countdown] +1s from kill → %.1fs left",
+        "[countdown] %s from %s kill → %.1fs left",
+        label,
+        enemyActor.enemyType or "enemy",
         self.countdown:getRemaining()
     ))
     self:removeActor(enemyActor)
@@ -121,6 +132,7 @@ function state:onNestCleansed(nest)
     local col = nests.color(nest.id)
     self:pushFloat("NEST SEALED", nest.x, nest.y - 18, col[1], col[2], col[3], 1.1)
     atmosphere.notifyNestCleansed(nest)
+    encounter_director.onNestCleansed(nest)
     print(string.format(
         "[nest] nest_%s sealed (%d/3)",
         nest.id,
@@ -211,8 +223,11 @@ function state:update(dt)
         end
 
         if not frozen then
-            nests.update(self, dt)
-            collapse.update(dt, self)
+            if not self.enemyTestMode then
+                nests.update(self, dt)
+                collapse.update(dt, self)
+                encounter_director.update(self, dt)
+            end
             frozen = self.extracted or self.sectorCleared
             for _, actor in ipairs(self.actors) do
                 if actor.label == "enemy" and not actor.dead then
@@ -221,6 +236,7 @@ function state:update(dt)
                     actor:update(dt)
                 end
             end
+            enemy_attacks.updateProjectiles(dt, playerActor)
         elseif playerActor and playerActor.collider then
             playerActor.collider:setLinearVelocity(0, 0)
             for _, actor in ipairs(self.actors) do
@@ -570,11 +586,21 @@ function state:drawHud()
         10,
         sh - 40
     )
-    love.graphics.print(
-        "WASD · Space swing · Hold E cleanse · V crack test · H/G time · Esc",
-        10,
-        sh - 24
-    )
+    if state.enemyTestMode then
+        love.graphics.print(
+            "ENEMY TEST · WASD · Space swing · R reset · Esc quit",
+            10,
+            sh - 24
+        )
+    else
+        love.graphics.print(
+            "WASD · Space swing · Hold E cleanse · V crack · R restart · H/G time · Esc",
+            10,
+            sh - 24
+        )
+    end
+
+    enemy_test.drawHud(state)
 
     if physics.debug then
         love.graphics.setColor(1, 1, 1, 0.7)
@@ -607,14 +633,18 @@ function state:drawHud()
                 end
             end
         end
+        local enc = encounter_director.debugCounts(self)
         love.graphics.print(
             string.format(
-                "C:%d F:%d K:%d R:%d near %s",
+                "C:%d F:%d K:%d R:%d near %s | enc %d+%d/%d",
                 counts.chaser,
                 counts.fleer,
                 counts.keeper,
                 counts.ranger,
-                nearest and string.format("%.0f", nearest) or "-"
+                nearest and string.format("%.0f", nearest) or "-",
+                enc.active,
+                enc.pending,
+                enc.cap
             ),
             10,
             sh - 72
@@ -641,33 +671,30 @@ local function argvHas(argv, flag)
     return false
 end
 
-function love.load(args)
-    local argv = args or arg or {}
+local fontsReady = false
 
-    -- Courtyard art reset (cobble floor + dungeon_tiles districts; fountain kept):
-    --   love . -- --patch-nests
-    if argvHas(argv, "--patch-nests") then
-        local patcher = require "scripts.map_patch_nests"
-        local map, luaPath, tmxPath = patcher.write("res/maps/map.lua", "res/maps/map.tmx")
-        local empty = patcher.countEmptyFloor(map)
-        print("[map_patch] wrote " .. tostring(luaPath))
-        print("[map_patch] wrote " .. tostring(tmxPath))
-        print(string.format("[map_patch] Floor Layer empty cells: %d (want 0)", empty))
-        love.event.quit()
-        return
-    end
+--- Build a fresh playable run (physics world, map colliders, actors, director).
+--- Safe to call again after state:prepareRestart.
+local function beginRun(opts)
+    opts = opts or {}
+    local enemyTest = opts.enemyTest == true
 
+    physics.destroy()
     physics.init()
+    enemy_attacks.clearAll()
 
+    state.actors = {}
+    state.enemyTestMode = enemyTest
     state.gameMap = game_map.load("res/maps/map.lua")
     state.nests = nests.fromMap(state.gameMap)
     state.sectorCleared = false
     state.extracted = false
     state.extractReason = nil
     state.floats = {}
-    state.hintTime = 4
+    state.hintTime = enemyTest and 0 or 4
     atmosphere.load(state.nests)
     collapse.load(state.gameMap, state.nests)
+
     local playable = game_map.getPlayableArea(state.gameMap)
     physics.setPlayableArea(
         playable.x,
@@ -692,12 +719,17 @@ function love.load(args)
         boundaryCount
     ))
 
-    -- Plague resistance window (seconds). Timer IS health.
     state.countdown = countdown.new({ duration = 90 })
-    state.extracted = false
-    state.hudTimerFont = loadScriptFont(72)
-    state.hudLabelFont = loadScriptFont(26)
-    state.hudHelpFont = loadScriptFont(20)
+    if enemyTest then
+        -- Natural decay off; combat damage / sword kills still work.
+        state.countdown:pause()
+    end
+    if not fontsReady then
+        state.hudTimerFont = loadScriptFont(72)
+        state.hudLabelFont = loadScriptFont(26)
+        state.hudHelpFont = loadScriptFont(20)
+        fontsReady = true
+    end
     love.graphics.setFont(state.hudHelpFont)
 
     local spawnData = game_map.getSpawnPoints(state.gameMap)
@@ -713,33 +745,121 @@ function love.load(args)
     local trailFront = slashTrail:new(playerActor, false)
 
     local enemies = {}
-    for _, point in ipairs(spawnData.enemies) do
-        local e = enemy:new(point.x, point.y, { type = point.type })
-        e.nest = point.nest
-        enemies[#enemies + 1] = e
-    end
-    if #enemies == 0 then
-        enemies = {
-            enemy:new(120, 100, { type = "chaser" }),
-            enemy:new(280, 100, { type = "chaser" }),
-            enemy:new(120, 200, { type = "fleer" }),
-            enemy:new(315, 120, { type = "keeper" }),
-            enemy:new(280, 200, { type = "ranger" }),
-        }
-        print("[map] warning: no Spawns enemies; using plaza fallbacks")
+    if enemyTest then
+        enemies = enemy_test.spawnSet(spawnX, spawnY)
+        print("[enemy_test] one of each type — director/collapse off, timer paused")
+    else
+        for _, point in ipairs(spawnData.enemies) do
+            local e = enemy:new(point.x, point.y, { type = point.type })
+            e.nest = point.nest
+            e.killRewardSeconds = encounter_director.timeRewardFor(point.type)
+            enemies[#enemies + 1] = e
+        end
+        if #enemies == 0 then
+            enemies = {
+                enemy:new(120, 100, { type = "chaser" }),
+                enemy:new(280, 100, { type = "chaser" }),
+                enemy:new(120, 200, { type = "fleer" }),
+                enemy:new(315, 120, { type = "keeper" }),
+                enemy:new(280, 200, { type = "ranger" }),
+            }
+            for _, e in ipairs(enemies) do
+                e.killRewardSeconds = encounter_director.timeRewardFor(e.enemyType)
+            end
+            print("[map] warning: no Spawns enemies; using plaza fallbacks")
+        end
     end
 
     cam = camera(playerActor.pos.x, playerActor.pos.y, zoom)
-
-    -- Sword and its split ribbon layers are separate coordinated scene actors.
-    state:init(playerActor, swordActor, trailBehind, trailFront, unpack(enemies))
-
-    -- Combat → countdown: player hits call into state (keeps drain logic centralized).
-    playerActor.applyDamage = function(amount, source, opts)
-        return state:applyPlayerDamage(amount, source, opts)
+    if not state.canvas then
+        state.canvas = love.graphics.newCanvas()
+    end
+    state.gameState = GAME_STATE.GAMEPLAY
+    for _, actor in ipairs({ playerActor, swordActor, trailBehind, trailFront }) do
+        state.actors[#state.actors + 1] = actor
+    end
+    for _, e in ipairs(enemies) do
+        state.actors[#state.actors + 1] = e
     end
 
-    physics_selftest.run(playerActor, enemies)
+    playerActor.applyDamage = function(amount, source, dmgOpts)
+        return state:applyPlayerDamage(amount, source, dmgOpts)
+    end
+
+    if not enemyTest then
+        encounter_director.load(state, spawnData)
+    else
+        encounter_director.reset()
+    end
+
+    if opts.runPhysicsSelftest ~= false then
+        physics_selftest.run(playerActor, enemies)
+    end
+
+    return playerActor, enemies
+end
+
+--- Tear down actors/physics and rebuild a clean 90s run (no Windfield leaks).
+function state:prepareRestart()
+    print("[run] prepareRestart — safe teardown + rebuild")
+    encounter_director.reset()
+    enemy_attacks.clearAll()
+    local keepEnemyTest = self.enemyTestMode == true
+    self.actors = {}
+    beginRun({
+        runPhysicsSelftest = false,
+        enemyTest = keepEnemyTest,
+    })
+    print("[run] restart ready")
+end
+
+function love.load(args)
+    local argv = args or arg or {}
+
+    -- Courtyard art reset (cobble floor + dungeon_tiles districts; fountain kept):
+    --   love . -- --patch-nests
+    if argvHas(argv, "--patch-nests") then
+        local patcher = require "scripts.map_patch_nests"
+        local map, luaPath, tmxPath = patcher.write("res/maps/map.lua", "res/maps/map.tmx")
+        local empty = patcher.countEmptyFloor(map)
+        print("[map_patch] wrote " .. tostring(luaPath))
+        print("[map_patch] wrote " .. tostring(tmxPath))
+        print(string.format("[map_patch] Floor Layer empty cells: %d (want 0)", empty))
+        love.event.quit()
+        return
+    end
+
+    local enemyTest = argvHas(argv, "--enemy-test")
+    local playerActor = select(1, beginRun({
+        runPhysicsSelftest = not enemyTest,
+        enemyTest = enemyTest,
+    }))
+
+    if enemyTest then
+        local smokeOk = enemy_test.runSmoke(
+            state,
+            playerActor or state:getActor("player")
+        )
+        if argvHas(argv, "--enemy-test-quit") then
+            print(smokeOk and "[enemy_test] DONE PASS" or "[enemy_test] DONE FAIL")
+            love.event.quit()
+            return
+        end
+    end
+
+    if argvHas(argv, "--encounter-selftest") then
+        local ok = encounter_director.runSelftest(state)
+        print(ok and "[encounter_selftest] ALL PASS" or "[encounter_selftest] FAILED")
+        love.event.quit()
+        return
+    end
+
+    if argvHas(argv, "--damage-verify") then
+        local ok = physics_selftest.verifyVisibleKills(playerActor or state:getActor("player"))
+        print(ok and "[damage_verify] DONE PASS" or "[damage_verify] DONE FAIL")
+        love.event.quit()
+        return
+    end
 
     if argvHas(argv, "--selftest-quit") then
         love.event.quit()
@@ -759,7 +879,12 @@ function love.draw()
     -- Body, sword, and trails move across the scenery layer as one stack.
     game_map.drawWithActors(state.gameMap, state.drawActors, state)
     atmosphere.drawWorld()
-    -- World-space float juice (+1s / NEST SEALED).
+    if not state.enemyTestMode then
+        encounter_director.drawWorld()
+    end
+    -- Shared attack FX (slam circles + projectiles) for normal play and enemy-test.
+    enemy_attacks.drawAll(state.actors)
+    -- World-space float juice (+time / NEST SEALED).
     if state.hudLabelFont then
         love.graphics.setFont(state.hudLabelFont)
     end
@@ -822,6 +947,8 @@ function love.keypressed(k)
         if not state.extracted and not state.sectorCleared then
             collapse.debugCrackNearPlayer(state)
         end
+    elseif k == "r" then
+        state:prepareRestart()
     elseif k == "space" then
         if not state.extracted and not state.sectorCleared then
             startPlayerSwingAt(love.mouse.getPosition())

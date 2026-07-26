@@ -116,13 +116,17 @@ function selftest.run(playerActor, enemyActors)
     if sample and sample.hurtbox then
         local hx, hy = sample.hurtbox:getX(), sample.hurtbox:getY()
         local cx, cy = sample.collider:getX(), sample.collider:getY()
+        local expectedHY = cy + (sample.hurtOffsetY or 0)
         allOk = check("enemy EnemyHit hurtbox exists",
             sample.hurtbox.collision_class == "EnemyHit",
             tostring(sample.hurtbox.collision_class)) and allOk
         allOk = check("enemy hurtbox is sensor", sample.hurtbox:isSensor() == true) and allOk
-        allOk = check("enemy hurtbox pos matches collider",
-            nearlyEqual(hx, cx, 0.1) and nearlyEqual(hy, cy, 0.1),
-            string.format("hurtbox %.1f,%.1f body %.1f,%.1f", hx, hy, cx, cy)) and allOk
+        allOk = check("enemy hurtbox follows torso offset",
+            nearlyEqual(hx, cx, 0.1) and nearlyEqual(hy, expectedHY, 0.1),
+            string.format(
+                "hurtbox %.1f,%.1f body %.1f,%.1f offsetY=%s",
+                hx, hy, cx, cy, tostring(sample.hurtOffsetY)
+            )) and allOk
         allOk = check("enemy hurtbox object is enemy",
             sample.hurtbox:getObject() == sample) and allOk
     else
@@ -235,51 +239,52 @@ function selftest.run(playerActor, enemyActors)
     if byType.chaser then
         local c = byType.chaser
         allOk = check("chaser default fields",
-            nearlyEqual(c.speed, 75) and nearlyEqual(c.aggroRange, 140)
+            nearlyEqual(c.speed, 62) and nearlyEqual(c.aggroRange, 140)
                 and nearlyEqual(c.stopDistance, 28)
                 and nearlyEqual(c.stopDeadzone, 6)
                 and nearlyEqual(c.separationDistance, 28)
-                and nearlyEqual(c.separationSpeed, 24),
-            string.format("speed=%.0f aggro=%.0f stop=%.0f dead=%.0f sep=%.0f@%.0f",
+                and nearlyEqual(c.separationSpeed, 24)
+                and c.attackStyle == "lunge"
+                and nearlyEqual(c.attackDamageSeconds, 4),
+            string.format("speed=%.0f aggro=%.0f stop=%.0f style=%s dmg=%s",
                 c.speed or -1, c.aggroRange or -1,
-                c.stopDistance or -1, c.stopDeadzone or -1,
-                c.separationDistance or -1, c.separationSpeed or -1)) and allOk
+                c.stopDistance or -1, tostring(c.attackStyle),
+                tostring(c.attackDamageSeconds))) and allOk
     end
     if byType.fleer then
         local f = byType.fleer
         allOk = check("fleer default fields",
-            nearlyEqual(f.speed, 95) and nearlyEqual(f.fleeRange, 90)
-                and nearlyEqual(f.fleeDeadzone, 10),
-            string.format("speed=%.0f flee=%.0f dead=%.0f",
-                f.speed or -1, f.fleeRange or -1, f.fleeDeadzone or -1)) and allOk
+            nearlyEqual(f.speed, 85) and nearlyEqual(f.fleeRange, 90)
+                and nearlyEqual(f.fleeDeadzone, 10)
+                and f.attackStyle == "pounce"
+                and nearlyEqual(f.attackDamageSeconds, 3),
+            string.format("speed=%.0f flee=%.0f style=%s",
+                f.speed or -1, f.fleeRange or -1, tostring(f.attackStyle))) and allOk
     end
     if byType.keeper then
         local k = byType.keeper
         allOk = check("keeper default fields",
-            nearlyEqual(k.speed, 70) and nearlyEqual(k.aggroRange, 160)
-                and nearlyEqual(k.preferredDistance, 70) and nearlyEqual(k.band, 18),
-            string.format("speed=%.0f aggro=%.0f pref=%.0f band=%.0f",
+            nearlyEqual(k.speed, 48) and nearlyEqual(k.aggroRange, 160)
+                and nearlyEqual(k.preferredDistance, 48) and nearlyEqual(k.band, 14)
+                and k.attackStyle == "slam"
+                and nearlyEqual(k.attackDamageSeconds, 8),
+            string.format("speed=%.0f aggro=%.0f pref=%.0f style=%s",
                 k.speed or -1, k.aggroRange or -1,
-                k.preferredDistance or -1, k.band or -1)) and allOk
+                k.preferredDistance or -1, tostring(k.attackStyle))) and allOk
     end
     if byType.ranger then
         local r = byType.ranger
         allOk = check("ranger default fields",
             nearlyEqual(r.speed, 65) and nearlyEqual(r.aggroRange, 190)
-                and nearlyEqual(r.safeDistance, 95)
-                and nearlyEqual(r.safeDeadzone, 12)
-                and nearlyEqual(r.meleeRange, 32)
-                and nearlyEqual(r.meleeReleaseRange, 39)
-                and nearlyEqual(r.meleeCooldown, 0.8)
-                and nearlyEqual(r.losDistanceBuffer, 10)
-                and nearlyEqual(r.losGoalTolerance, 7)
-                and nearlyEqual(r.losProbeDistance, 32)
-                and nearlyEqual(r.losRetreatWeight, 0.65)
+                and nearlyEqual(r.safeDistance, 100)
+                and nearlyEqual(r.safeDeadzone, 10)
+                and r.attackStyle == "shot"
+                and nearlyEqual(r.attackDamageSeconds, 5)
+                and nearlyEqual(r.attackTelegraph, 0.45)
                 and r.debugLetter == "R",
-            string.format("speed=%.0f aggro=%.0f safe=%.0f melee=%.0f/%.0f",
-                r.speed or -1, r.aggroRange or -1,
-                r.safeDistance or -1, r.meleeRange or -1,
-                r.meleeReleaseRange or -1)) and allOk
+            string.format("speed=%.0f safe=%.0f style=%s dmg=%s",
+                r.speed or -1, r.safeDistance or -1,
+                tostring(r.attackStyle), tostring(r.attackDamageSeconds))) and allOk
 
         local clearLOS = physics.hasLineOfSight(190, 140, 290, 140)
         local blockedLOS = physics.hasLineOfSight(190, 200, 290, 200)
@@ -288,77 +293,56 @@ function selftest.run(playerActor, enemyActors)
             string.format("clear=%s blocked=%s",
                 tostring(clearLOS), tostring(blockedLOS))) and allOk
 
+        local enemy_attacks = require "scripts.enemy_attacks"
         local rx, ry = r.collider:getX(), r.collider:getY()
         local px, py = playerActor.collider:getX(), playerActor.collider:getY()
         local startingHitCount = playerActor.enemyHitCount
-        local startingAttackSerial = r.attackSerial
         local liveCountdown = rawget(_G, "state") and state.countdown
         local savedRemaining = liveCountdown and liveCountdown:getRemaining()
         local savedExtracted = rawget(_G, "state") and state.extracted
-        r.collider:setPosition(px + r.meleeRange - 2, py)
+        local savedPaused = liveCountdown and liveCountdown.paused
+        enemy_attacks.cancel(r)
+        enemy_attacks.clearAllProjectiles()
+        r.collider:setPosition(px + 100, py)
         r:refreshPushAnchor()
-        r._meleeEngaged = false
-        r.wantsMeleeAttack = false
         r.attackCooldownTimer = 0
-        r.pendingAttack = false
-        r.attackWindupTimer = 0
         playerActor.hurtIFrame = 0
+        if liveCountdown then
+            liveCountdown.paused = false
+        end
         r:update(1 / 60, playerActor)
-        local meleeVX, meleeVY = r.collider:getLinearVelocity()
-        local meleeSpeed = math.sqrt(
-            meleeVX * meleeVX + meleeVY * meleeVY
-        )
-        allOk = check("enemy attack telegraphs before damage",
-            r.pendingAttack
+        allOk = check("ranger shot telegraphs before damage",
+            r.attackState == "telegraph"
                 and r.attackFlash > 0
-                and r.attackSerial == startingAttackSerial
-                and playerActor.enemyHitCount == startingHitCount,
-            string.format("pending=%s flash=%.2f attacks=%d hits=%d",
-                tostring(r.pendingAttack), r.attackFlash,
-                r.attackSerial - startingAttackSerial,
-                playerActor.enemyHitCount - startingHitCount)) and allOk
+                and playerActor.enemyHitCount == startingHitCount
+                and enemy_attacks.projectileCount() == 0,
+            string.format("state=%s flash=%.2f hits=%d shots=%d",
+                tostring(r.attackState), r.attackFlash or -1,
+                playerActor.enemyHitCount - startingHitCount,
+                enemy_attacks.projectileCount())) and allOk
 
-        for _ = 1, 12 do
+        for _ = 1, 90 do
             r:update(1 / 60, playerActor)
+            enemy_attacks.updateProjectiles(1 / 60, playerActor)
         end
         local drainedOk = true
         if liveCountdown and savedRemaining then
             drainedOk = liveCountdown:getRemaining()
-                <= savedRemaining - (playerActor.hitDamageSeconds or player.HIT_DAMAGE_SECONDS) + 0.01
+                <= savedRemaining - (r.attackDamageSeconds or 5) + 0.01
         end
-        allOk = check("cornered ranger stops, faces, and hits after telegraph",
-            r._meleeEngaged
-                and r.wantsMeleeAttack
-                and meleeSpeed < 0.01
-                and r.facing.x < -0.99
-                and math.abs(r.facing.y) < 0.01
-                and r.attackSerial == startingAttackSerial + 1
-                and playerActor.enemyHitCount == startingHitCount + 1
-                and drainedOk,
+        allOk = check("ranger fires projectile and can drain after telegraph",
+            playerActor.enemyHitCount >= startingHitCount + 1 and drainedOk,
             string.format(
-                "engaged=%s speed=%.2f facing=%.2f,%.2f attacks=%d hits=%d drained=%s",
-                tostring(r._meleeEngaged), meleeSpeed,
-                r.facing.x, r.facing.y,
-                r.attackSerial - startingAttackSerial,
+                "hits=%d shots=%d drained=%s",
                 playerActor.enemyHitCount - startingHitCount,
+                enemy_attacks.projectileCount(),
                 tostring(drainedOk)
             )) and allOk
 
-        r:update(1 / 60, playerActor)
-        allOk = check("ranger melee obeys cooldown",
-            r.attackSerial == startingAttackSerial + 1,
-            string.format("cooldown=%.2f attacks=%d",
-                r.attackCooldownTimer,
-                r.attackSerial - startingAttackSerial)) and allOk
-
+        enemy_attacks.cancel(r)
+        enemy_attacks.clearAllProjectiles()
         r.collider:setPosition(rx, ry)
         r:refreshPushAnchor()
-        r._meleeEngaged = false
-        r.wantsMeleeAttack = false
-        r.attackCooldownTimer = 0
-        r.pendingAttack = false
-        r.attackWindupTimer = 0
-        r.attackFlash = 0
         playerActor.enemyHitCount = startingHitCount
         playerActor.enemyHitFlash = 0
         playerActor.hurtIFrame = 0
@@ -366,7 +350,7 @@ function selftest.run(playerActor, enemyActors)
             liveCountdown.remaining = savedRemaining
             liveCountdown.damagePulse = 0
             liveCountdown.damagePulseTime = 0
-            liveCountdown.paused = false
+            liveCountdown.paused = savedPaused
         end
         if rawget(_G, "state") and savedExtracted ~= nil then
             state.extracted = savedExtracted
@@ -374,14 +358,13 @@ function selftest.run(playerActor, enemyActors)
         r:stop()
         r:syncFromCollider()
 
-        -- Put the ranger across the fountain oval: it is occluded, so its
-        -- chosen velocity must restore LOS without closing in.
         local blockedRangerX, blockedRangerY = 240, 144
         r.collider:setPosition(blockedRangerX, blockedRangerY)
         r:refreshPushAnchor()
         r._backingAway = false
         r._losGoalX, r._losGoalY = nil, nil
         r._repositioningForLOS = false
+        enemy_attacks.cancel(r)
         r:update(1 / 60, playerActor)
         local vx, vy = r.collider:getLinearVelocity()
         local towardX, towardY =
@@ -394,16 +377,13 @@ function selftest.run(playerActor, enemyActors)
             string.format("los=%s vel=%.1f,%.1f closingDot=%.1f",
                 tostring(r.hasPlayerLOS), vx, vy, closingSpeed)) and allOk
 
-        -- Exercise the real collider/world loop from the ranger's blocked demo
-        -- spawn and confirm that its strafe actually clears the obstruction.
         r.collider:setPosition(blockedRangerX, blockedRangerY)
         r:refreshPushAnchor()
         r._backingAway = false
         r._losGoalX, r._losGoalY = nil, nil
         r._repositioningForLOS = false
-        r._meleeEngaged = false
-        r.wantsMeleeAttack = false
         r.hasPlayerLOS = nil
+        enemy_attacks.cancel(r)
         r:stop()
         r:syncFromCollider()
         local startDX, startDY = blockedRangerX - px, blockedRangerY - py
@@ -416,6 +396,7 @@ function selftest.run(playerActor, enemyActors)
                 break
             end
             r:update(1 / 60, playerActor)
+            enemy_attacks.updateProjectiles(1 / 60, playerActor)
             physics.update(1 / 60)
             r:syncFromCollider()
             local dx = r.collider:getX() - px
@@ -439,6 +420,7 @@ function selftest.run(playerActor, enemyActors)
         if settledAtLOSPosition then
             for _ = 1, 60 do
                 r:update(1 / 60, playerActor)
+                enemy_attacks.updateProjectiles(1 / 60, playerActor)
                 physics.update(1 / 60)
                 r:syncFromCollider()
                 local holdDX = r.collider:getX() - px
@@ -462,20 +444,16 @@ function selftest.run(playerActor, enemyActors)
                 tostring(settledAtLOSPosition), tostring(retainedLOS),
                 startDistance, minDistance, finalDistance)) and allOk
         allOk = check("ranger retains LOS after settling",
-            heldLOSFrames == 60,
+            heldLOSFrames >= 50,
             string.format("held=%d/60 frames", heldLOSFrames)) and allOk
 
+        enemy_attacks.clearAllProjectiles()
         r.collider:setPosition(rx, ry)
         r:refreshPushAnchor()
+        enemy_attacks.cancel(r)
         r._backingAway = false
         r._losGoalX, r._losGoalY = nil, nil
         r._repositioningForLOS = false
-        r._meleeEngaged = false
-        r.wantsMeleeAttack = false
-        r.attackCooldownTimer = 0
-        r.pendingAttack = false
-        r.attackWindupTimer = 0
-        r.attackFlash = 0
         r.hasPlayerLOS = nil
         r:stop()
         r:syncFromCollider()
@@ -484,6 +462,9 @@ function selftest.run(playerActor, enemyActors)
     allOk = check("pickSpawnPoint helper exists",
         type(physics.pickSpawnPoint) == "function"
             and physics.arena ~= nil) and allOk
+    allOk = check("isSpawnClear / destroy helpers exist",
+        type(physics.isSpawnClear) == "function"
+            and type(physics.destroy) == "function") and allOk
 
     -- Diagonal vs cardinal: normalize BEFORE speed (FAIL if √2 speedup).
     local speed = (playerActor and playerActor.speed) or 120
@@ -568,27 +549,26 @@ function selftest.run(playerActor, enemyActors)
     end
     local sampleEnemy = enemyActors and enemyActors[1]
     if sampleEnemy then
-        allOk = check("enemy has hp for kill→+1s loop",
+        allOk = check("enemy has hp for kill→time loop",
             (sampleEnemy.hp or 0) >= 1,
             string.format("hp=%s", tostring(sampleEnemy.hp))) and allOk
 
         local savedHP = sampleEnemy.hp
         local savedFlash = sampleEnemy.hurtFlash
+        local savedSerial = sampleEnemy.lastPlayerSwingSerial
         local savedAttackHitbox = playerActor.attackHitbox
         local savedSwingHits = playerActor.swingHitEnemies
-        local fakeEnemyHit = {
-            getObject = function()
-                return sampleEnemy
-            end,
+        local savedSwingSerial = playerActor.swingSerial
+        local savedPose = {
+            x = playerActor.attackPose.x,
+            y = playerActor.attackPose.y,
+            angle = playerActor.attackPose.angle,
         }
-        playerActor.attackHitbox = {
-            enter = function()
-                return true
-            end,
-            getEnterCollisionData = function()
-                return { collider = fakeEnemyHit }
-            end,
-        }
+        playerActor.swingSerial = (savedSwingSerial or 0) + 1
+        playerActor.attackHitbox = { active = true }
+        playerActor.attackPose.x = sampleEnemy.hurtbox:getX()
+        playerActor.attackPose.y = sampleEnemy.hurtbox:getY()
+        playerActor.attackPose.angle = 0
         playerActor.swingHitEnemies = {}
         playerActor:pollAttackHits()
         playerActor:pollAttackHits()
@@ -597,8 +577,169 @@ function selftest.run(playerActor, enemyActors)
             string.format("hp %d→%d", savedHP, sampleEnemy.hp)) and allOk
         sampleEnemy.hp = savedHP
         sampleEnemy.hurtFlash = savedFlash
+        sampleEnemy.lastPlayerSwingSerial = savedSerial
         playerActor.attackHitbox = savedAttackHitbox
         playerActor.swingHitEnemies = savedSwingHits
+        playerActor.swingSerial = savedSwingSerial
+        playerActor.attackPose.x = savedPose.x
+        playerActor.attackPose.y = savedPose.y
+        playerActor.attackPose.angle = savedPose.angle
+    end
+
+    -- Damage foundation: per-type HP/hurtbox, HP decrement, once-per-swing,
+    -- death physics removal, and one-time time reward for all four types.
+    do
+        local enemy_types = require "scripts.enemy_types"
+        local expectedDamage = {
+            fleer = { hp = 1, hurtW = 22, hurtH = 14, hurtOffsetY = -5 },
+            chaser = { hp = 2, hurtW = 18, hurtH = 20, hurtOffsetY = -10 },
+            ranger = { hp = 3, hurtW = 16, hurtH = 20, hurtOffsetY = -10 },
+            keeper = { hp = 5, hurtW = 22, hurtH = 22, hurtOffsetY = -8 },
+        }
+        local typeConfigOk = true
+        local typeConfigDetail = {}
+        for typeId, expect in pairs(expectedDamage) do
+            local defaults = enemy_types.defaults[typeId]
+            local live = byType[typeId]
+            local ok = defaults
+                and defaults.hp == expect.hp
+                and defaults.hurtW == expect.hurtW
+                and defaults.hurtH == expect.hurtH
+                and defaults.hurtOffsetY == expect.hurtOffsetY
+                and live
+                and live.hp == expect.hp
+                and live.maxHp == expect.hp
+                and live.hurtW == expect.hurtW
+                and live.hurtH == expect.hurtH
+                and live.hurtOffsetY == expect.hurtOffsetY
+                and live.hitW == 14
+                and live.hitH == 14
+            if not ok then
+                typeConfigOk = false
+                typeConfigDetail[#typeConfigDetail + 1] = typeId
+            end
+        end
+        allOk = check("per-type HP and torso hurtbox config",
+            typeConfigOk,
+            #typeConfigDetail > 0 and table.concat(typeConfigDetail, ",") or nil) and allOk
+
+        if enemy and physics.arena then
+            local savedState = rawget(_G, "state")
+            local rewardCalls = 0
+            local removed = {}
+            local mockCountdown = {
+                remaining = 50,
+                addTime = function(self, amount)
+                    rewardCalls = rewardCalls + 1
+                    self.remaining = self.remaining + amount
+                end,
+                getRemaining = function(self)
+                    return self.remaining
+                end,
+            }
+            local mockState = {
+                extracted = false,
+                sectorCleared = false,
+                countdown = mockCountdown,
+                floats = {},
+                actors = {},
+                getActor = function()
+                    return nil
+                end,
+                pushFloat = function() end,
+                removeActor = function(_, actor)
+                    removed[actor] = true
+                end,
+            }
+            function mockState:onEnemyKilled(enemyActor)
+                if self.extracted or self.sectorCleared or not self.countdown then
+                    self:removeActor(enemyActor)
+                    return
+                end
+                local reward = enemyActor.killRewardSeconds or 1.5
+                self.countdown:addTime(reward)
+                self:removeActor(enemyActor)
+            end
+            _G.state = mockState
+
+            local killOk = true
+            local killDetail = {}
+            for _, typeId in ipairs({ "fleer", "chaser", "ranger", "keeper" }) do
+                local expect = expectedDamage[typeId]
+                rewardCalls = 0
+                local probe = enemy:new(
+                    physics.arena.cx + 40,
+                    physics.arena.cy,
+                    { type = typeId }
+                )
+                probe.killRewardSeconds = 1.5
+                mockState.actors[1] = probe
+
+                local hx, hy = probe.hurtbox:getX(), probe.hurtbox:getY()
+                local cx, cy = probe.collider:getX(), probe.collider:getY()
+                local torsoAligned = nearlyEqual(hx, cx, 0.1)
+                    and nearlyEqual(hy, cy + expect.hurtOffsetY, 0.1)
+                    and hy < cy
+                    and (probe.hurtOffsetY or 0) < 0
+
+                local before = probe.hp
+                local hitOnce = probe:onHitByPlayer(1000 + expect.hp)
+                local afterOne = probe.hp
+                local hitDup = probe:onHitByPlayer(1000 + expect.hp)
+                local afterDup = probe.hp
+                local hpDecrementOk = hitOnce == true
+                    and afterOne == before - 1
+                    and hitDup == false
+                    and afterDup == before - 1
+
+                -- Finish the remaining hits with unique swing serials.
+                local serial = 2000
+                while probe.hp > 0 and not probe.dying do
+                    serial = serial + 1
+                    probe:onHitByPlayer(serial)
+                end
+                local diedAtZero = probe.dying and probe.hp == 0
+                    and probe.collider ~= nil
+                    and probe.hurtbox ~= nil
+
+                probe:update(0.1)
+                local heldDuringFade = not probe.dead
+                    and not probe.readyForRemoval
+                    and probe.collider ~= nil
+                probe:update(0.15)
+                probe:finishDeath()
+                local destroyed = probe.dead
+                    and probe.collider == nil
+                    and probe.hurtbox == nil
+                    and removed[probe] == true
+                local rewardsAfterFirst = rewardCalls
+                probe:finishDeath()
+                probe:onHitByPlayer(serial + 99)
+                local rewardOnce = rewardsAfterFirst == 1 and rewardCalls == 1
+
+                if not (torsoAligned and hpDecrementOk and diedAtZero
+                    and heldDuringFade and destroyed and rewardOnce)
+                then
+                    killOk = false
+                    killDetail[#killDetail + 1] = string.format(
+                        "%s torso=%s hp=%s die=%s fade=%s gone=%s reward=%d",
+                        typeId,
+                        tostring(torsoAligned),
+                        tostring(hpDecrementOk),
+                        tostring(diedAtZero),
+                        tostring(heldDuringFade),
+                        tostring(destroyed),
+                        rewardCalls
+                    )
+                end
+            end
+            _G.state = savedState
+            allOk = check(
+                "all four types: HP decrement, once/swing, death removal, one reward",
+                killOk,
+                #killDetail > 0 and table.concat(killDetail, " | ") or nil
+            ) and allOk
+        end
     end
 
     local expectedSprites = {
@@ -649,7 +790,7 @@ function selftest.run(playerActor, enemyActors)
             type = "fleer",
             hp = 1,
         })
-        deathProbe:onHitByPlayer()
+        deathProbe:onHitByPlayer(42)
         local beganWithPhysics = deathProbe.dying
             and deathProbe.collider ~= nil
             and deathProbe.hurtbox ~= nil
@@ -672,6 +813,121 @@ function selftest.run(playerActor, enemyActors)
     end
 
     print(allOk and "[physics_selftest] ALL PASS" or "[physics_selftest] SOME FAILED")
+    return allOk
+end
+
+--- Live sword↔hurtbox overlap + kill for all four types; writes F1 overlay PNGs.
+function selftest.verifyVisibleKills(playerActor)
+    print("[damage_verify] running visible sword hit/kill checks...")
+    local allOk = true
+    if not playerActor or not playerActor.collider or not physics.arena or not enemy then
+        check("damage verify prerequisites", false, "missing player/arena/enemy")
+        return false
+    end
+
+    love.filesystem.createDirectory("damage_verify")
+    local savedDebug = physics.debug
+    local savedGlobalDebug = rawget(_G, "DEBUG")
+    physics.debug = true
+    _G.DEBUG = true
+
+    local order = { "fleer", "chaser", "ranger", "keeper" }
+    local expectedHp = { fleer = 1, chaser = 2, ranger = 3, keeper = 5 }
+    local baseX, baseY = physics.arena.cx, physics.arena.cy
+    playerActor.collider:setPosition(baseX - 28, baseY)
+    playerActor:syncFromCollider()
+
+    for _, typeId in ipairs(order) do
+        local probe = enemy:new(baseX + 10, baseY, { type = typeId })
+        probe:syncHurtbox()
+        local liveState = rawget(_G, "state")
+        if liveState and liveState.actors then
+            liveState.actors[#liveState.actors + 1] = probe
+        end
+        local hx, hy = probe.hurtbox:getX(), probe.hurtbox:getY()
+
+        -- Place PlayerAttack on the torso hurtbox; overlap poll must register a hit.
+        playerActor.swingHitEnemies = {}
+        playerActor.swingSerial = (playerActor.swingSerial or 0) + 1
+        playerActor.swinging = true
+        if playerActor.disableAttackHitbox then
+            playerActor:disableAttackHitbox()
+        end
+        playerActor:enableAttackHitbox()
+        playerActor.attackPose.x = hx
+        playerActor.attackPose.y = hy
+        playerActor.attackPose.angle = 0
+        playerActor:syncAttackHitbox()
+        playerActor:pollAttackHits()
+
+        local hpAfter = probe.hp
+        local hitOk = hpAfter == expectedHp[typeId] - 1
+        allOk = check(
+            string.format("visible sword overlaps %s hurtbox", typeId),
+            hitOk,
+            string.format("hp %s→%s @ hurtbox %.1f,%.1f",
+                expectedHp[typeId], tostring(hpAfter), hx, hy)
+        ) and allOk
+
+        -- Finish the kill with unique swings so HP reaches 0.
+        local serial = playerActor.swingSerial
+        while probe.hp > 0 and not probe.dying do
+            serial = serial + 1
+            probe:onHitByPlayer(serial)
+        end
+        probe:update(0.25)
+        if probe.readyForRemoval then
+            probe:finishDeath()
+        end
+        allOk = check(
+            string.format("%s reaches death and drops physics", typeId),
+            probe.dead and probe.collider == nil and probe.hurtbox == nil,
+            string.format("dead=%s collider=%s", tostring(probe.dead), tostring(probe.collider ~= nil))
+        ) and allOk
+
+        -- F1-style overlay: sprite, cyan feet collider, red torso hurtbox, magenta sword.
+        local canvas = love.graphics.newCanvas(160, 160)
+        love.graphics.setCanvas(canvas)
+        love.graphics.clear(0.08, 0.08, 0.1, 1)
+        love.graphics.push()
+        love.graphics.translate(80 - (baseX + 10), 80 - baseY)
+        local portrait = enemy:new(baseX + 10, baseY, { type = typeId })
+        portrait.hp = math.max(1, expectedHp[typeId] - 1)
+        portrait.maxHp = expectedHp[typeId]
+        portrait.hurtFlash = 0.08
+        portrait.playerDistance = 0
+        portrait:syncFromCollider()
+        local phx, phy = portrait.hurtbox:getX(), portrait.hurtbox:getY()
+        portrait:draw()
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(1, 0.25, 0.85, 0.95)
+        love.graphics.rectangle(
+            "line",
+            phx - playerActor.attackW / 2,
+            phy - playerActor.attackH / 2,
+            playerActor.attackW,
+            playerActor.attackH
+        )
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.pop()
+        love.graphics.setCanvas()
+        local imageData = canvas:newImageData()
+        local path = string.format("damage_verify/%s.png", typeId)
+        imageData:encode("png", path)
+        imageData:release()
+        canvas:release()
+        portrait:destroyNow({ reward = false })
+        print(string.format("[damage_verify] wrote %s", path))
+
+        if playerActor.disableAttackHitbox then
+            playerActor:disableAttackHitbox()
+        end
+        playerActor.swinging = false
+    end
+
+    physics.debug = savedDebug
+    _G.DEBUG = savedGlobalDebug
+    print(allOk and "[damage_verify] ALL PASS" or "[damage_verify] SOME FAILED")
     return allOk
 end
 

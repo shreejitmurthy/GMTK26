@@ -298,7 +298,9 @@ function player:onHitByEnemy(source)
         return
     end
 
-    local amount = self.hitDamageSeconds or player.HIT_DAMAGE_SECONDS
+    local amount = (source and source.attackDamageSeconds)
+        or self.hitDamageSeconds
+        or player.HIT_DAMAGE_SECONDS
     local remaining = nil
     if self.applyDamage then
         local ok, left = self.applyDamage(amount, source)
@@ -467,34 +469,119 @@ function player:updateSwing(dt)
     end
 end
 
---- After physics.update: PlayerAttack enters EnemyHit → log once per enemy per swing.
+local function pointInRotatedRect(px, py, cx, cy, halfW, halfH, angle)
+    local dx, dy = px - cx, py - cy
+    local c, s = math.cos(angle), math.sin(angle)
+    local localX = dx * c + dy * s
+    local localY = -dx * s + dy * c
+    return math.abs(localX) <= halfW and math.abs(localY) <= halfH
+end
+
+local function swordOverlapsHurtbox(sx, sy, angle, attackW, attackH, hx, hy, hurtW, hurtH)
+    local ahw, ahh = attackW / 2, attackH / 2
+    local ehw, ehh = hurtW / 2, hurtH / 2
+    local c, s = math.cos(angle), math.sin(angle)
+    local hurtCorners = {
+        { hx - ehw, hy - ehh },
+        { hx + ehw, hy - ehh },
+        { hx + ehw, hy + ehh },
+        { hx - ehw, hy + ehh },
+    }
+    for i = 1, 4 do
+        if pointInRotatedRect(
+            hurtCorners[i][1],
+            hurtCorners[i][2],
+            sx,
+            sy,
+            ahw,
+            ahh,
+            angle
+        ) then
+            return true
+        end
+    end
+    local swordCorners = {
+        { sx + (-ahw) * c - (-ahh) * s, sy + (-ahw) * s + (-ahh) * c },
+        { sx + (ahw) * c - (-ahh) * s, sy + (ahw) * s + (-ahh) * c },
+        { sx + (ahw) * c - (ahh) * s, sy + (ahw) * s + (ahh) * c },
+        { sx + (-ahw) * c - (ahh) * s, sy + (-ahw) * s + (ahh) * c },
+    }
+    for i = 1, 4 do
+        local px, py = swordCorners[i][1], swordCorners[i][2]
+        if math.abs(px - hx) <= ehw and math.abs(py - hy) <= ehh then
+            return true
+        end
+    end
+    -- Centers inside the other volume (covers full containment either way).
+    if pointInRotatedRect(hx, hy, sx, sy, ahw, ahh, angle) then
+        return true
+    end
+    if math.abs(sx - hx) <= ehw and math.abs(sy - hy) <= ehh then
+        return true
+    end
+    return false
+end
+
+--- After physics.update: sword volume vs enemy hurtboxes → once per enemy per swing.
+--- Tests live actors directly; kinematic EnemyHit sensors do not yield reliable enters.
 function player:pollAttackHits()
     if not self.attackHitbox then
         return
     end
-    if self.attackHitbox:enter("EnemyHit") then
-        local data = self.attackHitbox:getEnterCollisionData("EnemyHit")
-        local other = data and data.collider
-        local enemyObj = other and other:getObject()
-        if enemyObj and self.swingHitEnemies[enemyObj] then
+
+    local function applyHit(enemyObj)
+        if not enemyObj or self.swingHitEnemies[enemyObj] then
             return
         end
-        if enemyObj then
-            self.swingHitEnemies[enemyObj] = true
-            if enemyObj.onHitByPlayer then
-                enemyObj:onHitByPlayer()
-            else
-                local label = enemyObj.label or "?"
-                local ex, ey = 0, 0
-                if enemyObj.pos then
-                    ex, ey = enemyObj.pos.x, enemyObj.pos.y
-                elseif other then
-                    ex, ey = other:getX(), other:getY()
-                end
-                print(string.format("[hit] PlayerAttack entered EnemyHit (%s @ %.1f, %.1f)", label, ex, ey))
-            end
+        if enemyObj.dead or enemyObj.dying then
+            return
+        end
+        self.swingHitEnemies[enemyObj] = true
+        if enemyObj.onHitByPlayer then
+            enemyObj:onHitByPlayer(self.swingSerial)
         else
-            print("[hit] PlayerAttack entered EnemyHit (?)")
+            local label = enemyObj.label or "?"
+            local ex, ey = 0, 0
+            if enemyObj.pos then
+                ex, ey = enemyObj.pos.x, enemyObj.pos.y
+            end
+            print(string.format(
+                "[hit] PlayerAttack entered EnemyHit (%s @ %.1f, %.1f)",
+                label,
+                ex,
+                ey
+            ))
+        end
+    end
+
+    local actors = rawget(_G, "state") and state.actors
+    if not actors then
+        return
+    end
+
+    local x = self.attackPose.x
+    local y = self.attackPose.y
+    local angle = self.attackPose.angle or 0
+    for _, actor in ipairs(actors) do
+        if actor.label == "enemy"
+            and actor.hurtbox
+            and not actor.dead
+            and not actor.dying
+        then
+            local hx, hy = actor.hurtbox:getX(), actor.hurtbox:getY()
+            if swordOverlapsHurtbox(
+                x,
+                y,
+                angle,
+                self.attackW,
+                self.attackH,
+                hx,
+                hy,
+                actor.hurtW or 14,
+                actor.hurtH or 14
+            ) then
+                applyHit(actor)
+            end
         end
     end
 end
@@ -590,5 +677,20 @@ function player:draw()
         self.pos.x - frameWidth / 2,
         self.pos.y + self.spriteH / 2 - frameHeight
     )
+    if physics.debug and self.attackHitbox then
+        love.graphics.push()
+        love.graphics.translate(self.attackPose.x, self.attackPose.y)
+        love.graphics.rotate(self.attackPose.angle)
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(1, 0.25, 0.85, 0.95)
+        love.graphics.rectangle(
+            "line",
+            -self.attackW / 2,
+            -self.attackH / 2,
+            self.attackW,
+            self.attackH
+        )
+        love.graphics.pop()
+    end
     love.graphics.setColor(1, 1, 1, 1)
 end

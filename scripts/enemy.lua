@@ -4,16 +4,19 @@
 require "scripts.actor"
 local physics = require "scripts.physics"
 local enemy_types = require "scripts.enemy_types"
+local enemy_attacks = require "scripts.enemy_attacks"
 
 enemy = {}
 setmetatable(enemy, { __index = actor })
 
 local DEFAULT_HIT_W = 14
 local DEFAULT_HIT_H = 14
-local DEFAULT_HP = 2
 local HURT_FLASH_DURATION = 0.15
-local ATTACK_WINDUP_DURATION = 0.18
+local ATTACK_WINDUP_DURATION = 0.18 -- fallback flash scale for presentation
 local DEATH_DURATION = 0.2
+local HEALTH_BAR_NEAR_DISTANCE = 72
+local HEALTH_BAR_W = 18
+local HEALTH_BAR_H = 2
 
 local VISUAL_PROFILES = {
     chaser = {
@@ -136,6 +139,7 @@ function enemy:new(x, y, options)
     setmetatable(e, { __index = enemy })
 
     enemy_types.apply(e, options)
+    enemy_attacks.apply(e, options)
     e.facing = { x = 1, y = 0 }
     e.hurtFlash = 0
     e.attackFlash = 0
@@ -147,13 +151,16 @@ function enemy:new(x, y, options)
     e.visualTime = (x * 0.019 + y * 0.011) % (math.pi * 2)
     e.motionAmount = 0
     e.visualProfile = VISUAL_PROFILES[e.enemyType] or VISUAL_PROFILES.chaser
-    e.hp = options.hp or DEFAULT_HP
+    e.hp = e.hp
     e.maxHp = e.hp
     e.dying = false
     e.deathTimer = 0
     e.deathDuration = DEATH_DURATION
     e.readyForRemoval = false
     e.dead = false
+    e.killRewardGranted = false
+    e.lastPlayerSwingSerial = nil
+    e.playerDistance = math.huge
 
     e.img = loadEnemyImage(e.spritePath)
 
@@ -177,9 +184,18 @@ function enemy:new(x, y, options)
     e.collider.separationSpeed = e.separationSpeed
 
     -- This separate sensor follows the pushable body and handles attacks.
-    e.hurtW = hitW
-    e.hurtH = hitH
-    e.hurtbox = physics.newSensor(x - e.hurtW / 2, y - e.hurtH / 2, e.hurtW, e.hurtH, "EnemyHit")
+    e.hurtW = e.hurtW
+    e.hurtH = e.hurtH
+    e.hurtOffsetY = e.hurtOffsetY
+    local hurtX = x
+    local hurtY = y + e.hurtOffsetY
+    e.hurtbox = physics.newSensor(
+        hurtX - e.hurtW / 2,
+        hurtY - e.hurtH / 2,
+        e.hurtW,
+        e.hurtH,
+        "EnemyHit"
+    )
     e.hurtbox:setObject(e)
     e.hurtbox:setType("kinematic")
 
@@ -330,9 +346,7 @@ function enemy:die()
     self.dying = true
     self.deathTimer = self.deathDuration or DEATH_DURATION
     self.wantsMeleeAttack = false
-    self.pendingAttack = false
-    self.attackWindupTimer = 0
-    self.attackFlash = 0
+    enemy_attacks.cancel(self)
     if self.collider then
         self.collider:setLinearVelocity(0, 0)
     end
@@ -354,12 +368,7 @@ function enemy:updateDeath(dt)
     end
 end
 
---- Finalize only outside actor iteration so no following actor is skipped.
-function enemy:finishDeath()
-    if self.dead or not self.readyForRemoval then
-        return
-    end
-    self.dead = true
+local function destroyEnemyPhysics(self)
     if self.collider then
         physics.removeEnemyCollider(self.collider)
         self.collider:destroy()
@@ -369,20 +378,60 @@ function enemy:finishDeath()
         self.hurtbox:destroy()
         self.hurtbox = nil
     end
-    if state and state.onEnemyKilled then
+end
+
+--- Finalize only outside actor iteration so no following actor is skipped.
+function enemy:finishDeath()
+    if self.dead or not self.readyForRemoval then
+        return
+    end
+    self.dead = true
+    destroyEnemyPhysics(self)
+    if state and state.onEnemyKilled and not self.killRewardGranted then
+        self.killRewardGranted = true
         state:onEnemyKilled(self)
     elseif state and state.removeActor then
         state:removeActor(self)
     end
 end
 
---- Hook for player sword hits. Simple HP: 2 hits → kill → +1s via state.
-function enemy:onHitByPlayer()
-    if self.dead or self.dying then
+--- Immediate teardown (collapse abyss / restart). opts.reward=false skips +time.
+function enemy:destroyNow(opts)
+    opts = opts or {}
+    if self.dead then
+        if state and state.removeActor then
+            state:removeActor(self)
+        end
         return
     end
+    enemy_attacks.cancel(self)
+    self.dying = true
+    self.readyForRemoval = true
+    self.dead = true
+    destroyEnemyPhysics(self)
+    if opts.reward
+        and state
+        and state.onEnemyKilled
+        and not self.killRewardGranted
+    then
+        self.killRewardGranted = true
+        state:onEnemyKilled(self)
+    elseif state and state.removeActor then
+        state:removeActor(self)
+    end
+end
+
+--- Hook for player sword hits. A swing serial is accepted at most once.
+function enemy:onHitByPlayer(swingSerial)
+    if self.dead or self.dying then
+        return false
+    end
+    if swingSerial ~= nil and self.lastPlayerSwingSerial == swingSerial then
+        return false
+    end
+    self.lastPlayerSwingSerial = swingSerial
     local ex, ey = self.pos.x, self.pos.y
-    self.hp = (self.hp or DEFAULT_HP) - 1
+    self.hp = math.max(0, (self.hp or self.maxHp or 1) - 1)
     self.hurtFlash = HURT_FLASH_DURATION
     print(string.format(
         "[hit] PlayerAttack hit %s (%s @ %.1f, %.1f) hp=%d",
@@ -395,57 +444,7 @@ function enemy:onHitByPlayer()
     if self.hp <= 0 then
         self:die()
     end
-end
-
-local function validMeleeTarget(self, player)
-    if not self.wantsMeleeAttack or not player or not player.collider then
-        return false
-    end
-    local px, py = player.collider:getX(), player.collider:getY()
-    local dx, dy = self:vecToward(px, py)
-    local distance = math.sqrt(dx * dx + dy * dy)
-    return distance <= (self.meleeRange or 0)
-        and self:hasLineOfSight(px, py)
-end
-
---- Telegraph first, then apply close-range damage after the short windup.
-function enemy:tryAttack(dt, player)
-    self.attackCooldownTimer = math.max(
-        0,
-        (self.attackCooldownTimer or 0) - dt
-    )
-
-    if self.pendingAttack then
-        self.attackWindupTimer = math.max(0, self.attackWindupTimer - dt)
-        self.attackFlash = self.attackWindupTimer
-        if self.attackWindupTimer > 0 then
-            return
-        end
-        self.pendingAttack = false
-        if not validMeleeTarget(self, player) then
-            return
-        end
-        self.attackSerial = self.attackSerial + 1
-        if player.onHitByEnemy then
-            player:onHitByEnemy(self)
-        else
-            print(string.format(
-                "[hit] %s hit player",
-                self.enemyType or "enemy"
-            ))
-        end
-        return
-    end
-
-    if self.attackCooldownTimer > 0 or not validMeleeTarget(self, player) then
-        return
-    end
-    local px, py = player.collider:getX(), player.collider:getY()
-    self:faceToward(px, py)
-    self.attackCooldownTimer = self.meleeCooldown or 0.8
-    self.pendingAttack = true
-    self.attackWindupTimer = ATTACK_WINDUP_DURATION
-    self.attackFlash = ATTACK_WINDUP_DURATION
+    return true
 end
 
 function enemy:update(dt, player)
@@ -459,8 +458,18 @@ function enemy:update(dt, player)
     if self.hurtFlash and self.hurtFlash > 0 then
         self.hurtFlash = math.max(0, self.hurtFlash - dt)
     end
-    enemy_types.update(self, dt, player)
-    self:tryAttack(dt, player)
+    if player and player.collider and self.collider then
+        local px, py = player.collider:getX(), player.collider:getY()
+        local ex, ey = self.collider:getX(), self.collider:getY()
+        local dx, dy = px - ex, py - ey
+        self.playerDistance = math.sqrt(dx * dx + dy * dy)
+    else
+        self.playerDistance = math.huge
+    end
+    local attackBusy = enemy_attacks.update(self, dt, player)
+    if not attackBusy then
+        enemy_types.update(self, dt, player)
+    end
     self.visualTime = (self.visualTime or 0) + dt
     if self.collider then
         local vx, vy = self.collider:getLinearVelocity()
@@ -489,7 +498,10 @@ function enemy:syncHurtbox()
     if not self.hurtbox or not self.collider then
         return
     end
-    self.hurtbox:setPosition(self.collider:getX(), self.collider:getY())
+    self.hurtbox:setPosition(
+        self.collider:getX(),
+        self.collider:getY() + self.hurtOffsetY
+    )
 end
 
 function enemy:syncFromCollider()
@@ -509,7 +521,9 @@ function enemy:draw()
     end
     local profile = self.visualProfile or VISUAL_PROFILES.chaser
     local flashing = self.hurtFlash and self.hurtFlash > 0
-    local attacking = self.attackFlash and self.attackFlash > 0
+    -- Yellow telegraph/strike only — never recovery (that looked like frozen mustard statues).
+    local attackVisual = self.attackState == "telegraph"
+        or self.attackState == "strike"
     local deathProgress = 0
     if self.dying then
         deathProgress = 1 - (self.deathTimer or 0) / (self.deathDuration or DEATH_DURATION)
@@ -526,7 +540,7 @@ function enemy:draw()
         motionSuppression = 0
     elseif flashing then
         motionSuppression = 0.08
-    elseif attacking then
+    elseif attackVisual then
         motionSuppression = 0.16
     end
     local activeMotion = motion * motionSuppression
@@ -545,7 +559,7 @@ function enemy:draw()
     local lean = facing.x * profile.lean * activeMotion
         + step * math.rad(0.25) * activeMotion
 
-    local effectActive = flashing or attacking or self.dying
+    local effectActive = flashing or attackVisual or self.dying
     local idleWeight = effectActive and 0 or (1 - motion)
     local breath = math.sin(
         (self.visualTime or 0) * math.pi * 2 * profile.breathRate
@@ -565,11 +579,15 @@ function enemy:draw()
             * activeMotion
     end
     local anticipation = 0
-    if attacking and not flashing then
+    -- Telegraph anticipation only — recovery must not keep telegraph squash.
+    if self.attackState == "telegraph" and not flashing then
+        local tele = math.max(0.01, self.attackTelegraph or ATTACK_WINDUP_DURATION)
         anticipation = math.max(
             0,
-            math.min(1, self.attackFlash / ATTACK_WINDUP_DURATION)
+            math.min(1, (self.attackWindupTimer or self.attackFlash or 0) / tele)
         )
+    elseif self.attackState == "strike" and not flashing then
+        anticipation = 0.35
     end
     local attackScale = profile.attackScale * anticipation
     local scaleX = squashX
@@ -598,11 +616,14 @@ function enemy:draw()
     if flashing then
         flashColor = { 0.88, 0.43, 0.38 }
         flashAmount = 0.78
-    elseif attacking then
-        -- Warm warning flash remains readable without restoring fantasy colour.
+    elseif attackVisual then
+        -- Warm warning flash only while telegraphing / striking.
         local pulse = 0.5 + 0.5 * math.sin((self.attackFlash or 0) * 70)
         flashColor = { 0.9, 0.77, 0.47 }
         local baseAmount = self.enemyType == "ranger" and 0.52 or 0.38
+        if self.attackState == "strike" then
+            baseAmount = baseAmount * 0.55
+        end
         flashAmount = baseAmount + pulse * 0.12
     end
     local flipX = (self.facing and self.facing.x < 0) and -1 or 1
@@ -650,6 +671,57 @@ function enemy:draw()
     end
     love.graphics.pop()
     love.graphics.setColor(1, 1, 1, 1)
+
+    local showHealth = not self.dying
+        and self.hp > 0
+        and (
+            self.hp < self.maxHp
+            or attackVisual
+            or (self.playerDistance or math.huge) <= HEALTH_BAR_NEAR_DISTANCE
+        )
+    if showHealth then
+        local barX = self.pos.x - HEALTH_BAR_W / 2
+        local barY = groundY - (profile.originY or 32) - 4
+        local ratio = math.max(0, math.min(1, self.hp / self.maxHp))
+        love.graphics.setColor(0.04, 0.035, 0.03, 0.72)
+        love.graphics.rectangle(
+            "fill",
+            barX - 1,
+            barY - 1,
+            HEALTH_BAR_W + 2,
+            HEALTH_BAR_H + 2
+        )
+        love.graphics.setColor(0.64, 0.18, 0.14, 0.82)
+        love.graphics.rectangle(
+            "fill",
+            barX,
+            barY,
+            HEALTH_BAR_W * ratio,
+            HEALTH_BAR_H
+        )
+    end
+
+    if (DEBUG or physics.debug) and self.collider and self.hurtbox then
+        local bodyX, bodyY = self.collider:getX(), self.collider:getY()
+        local hurtX, hurtY = self.hurtbox:getX(), self.hurtbox:getY()
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(0.2, 0.85, 1, 0.95)
+        love.graphics.rectangle(
+            "line",
+            bodyX - self.hitW / 2,
+            bodyY - self.hitH / 2,
+            self.hitW,
+            self.hitH
+        )
+        love.graphics.setColor(1, 0.25, 0.35, 0.95)
+        love.graphics.rectangle(
+            "line",
+            hurtX - self.hurtW / 2,
+            hurtY - self.hurtH / 2,
+            self.hurtW,
+            self.hurtH
+        )
+    end
 
     if (DEBUG or physics.debug) and self.debugLetter then
         love.graphics.setColor(1, 1, 1, 1)

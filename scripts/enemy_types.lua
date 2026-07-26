@@ -7,21 +7,31 @@ local enemy_types = {}
 enemy_types.defaults = {
     chaser = {
         spritePath = "res/images/enemies/chaser.png",
-        speed = 75,
+        hp = 2,
+        -- Sword hurtbox covers the standing torso; solid body stays 14×14 at feet.
+        hurtW = 18,
+        hurtH = 20,
+        hurtOffsetY = -10,
+        speed = 62,
         aggroRange = 140,
         stopDistance = 28,
         stopDeadzone = 6,
         separationDistance = 28,
         separationSpeed = 24,
-        meleeRange = 30,
-        meleeReleaseRange = 36,
+        meleeRange = 42,
+        meleeReleaseRange = 48,
         meleeCooldown = 0.9,
         color = { 0.85, 0.35, 0.2 },
         letter = "C",
     },
     fleer = {
         spritePath = "res/images/enemies/fleer.png",
-        speed = 95,
+        hp = 1,
+        -- Low, wide rat body sits just above the foot collider.
+        hurtW = 22,
+        hurtH = 14,
+        hurtOffsetY = -5,
+        speed = 85,
         fleeRange = 90,
         fleeDeadzone = 10,
         color = { 0.35, 0.7, 0.4 },
@@ -29,25 +39,35 @@ enemy_types.defaults = {
     },
     keeper = {
         spritePath = "res/images/enemies/keeper.png",
-        speed = 70,
+        hp = 5,
+        -- Broad armoured torso above the feet (sprite mass sits lower in-frame).
+        hurtW = 22,
+        hurtH = 22,
+        hurtOffsetY = -8,
+        speed = 48,
         aggroRange = 160,
-        preferredDistance = 70,
-        band = 18,
-        meleeRange = 32,
-        meleeReleaseRange = 38,
-        meleeCooldown = 1.0,
+        preferredDistance = 48,
+        band = 14,
+        meleeRange = 54,
+        meleeReleaseRange = 60,
+        meleeCooldown = 1.25,
         color = { 0.25, 0.45, 0.75 },
         letter = "K",
     },
     ranger = {
         spritePath = "res/images/enemies/ranger.png",
+        hp = 3,
+        -- Slim hooded torso; keep width tighter than chaser/keeper.
+        hurtW = 16,
+        hurtH = 20,
+        hurtOffsetY = -10,
         speed = 65,
         aggroRange = 190,
-        safeDistance = 95,
-        safeDeadzone = 12,
+        safeDistance = 100,
+        safeDeadzone = 10,
         meleeRange = 32,
         meleeReleaseRange = 39,
-        meleeCooldown = 0.8,
+        meleeCooldown = 1.5,
         losDistanceBuffer = 10,
         losGoalTolerance = 7,
         losProbeDistance = 32,
@@ -94,6 +114,13 @@ local AI_FIELDS = {
     },
 }
 
+local DAMAGE_FIELDS = {
+    "hp",
+    "hurtW",
+    "hurtH",
+    "hurtOffsetY",
+}
+
 function enemy_types.normalizeType(typeId)
     if typeId == "chaser"
         or typeId == "fleer"
@@ -119,6 +146,14 @@ function enemy_types.apply(e, options)
         defaults.color[3],
     }
     e.debugLetter = defaults.letter
+
+    for _, field in ipairs(DAMAGE_FIELDS) do
+        if options[field] ~= nil then
+            e[field] = options[field]
+        else
+            e[field] = defaults[field]
+        end
+    end
 
     for _, field in ipairs(AI_FIELDS[typeId]) do
         e[field] = options[field] or defaults[field]
@@ -235,24 +270,8 @@ local function updateRanger(e, dt, player)
     end
 
     local playerLOS = e:hasLineOfSight(px, py)
-    if e._meleeEngaged then
-        if dist > e.meleeReleaseRange or not playerLOS then
-            e._meleeEngaged = false
-        end
-    elseif dist <= e.meleeRange and playerLOS then
-        e._meleeEngaged = true
-    end
-
-    if e._meleeEngaged then
-        e._backingAway = false
-        e._losGoalX, e._losGoalY = nil, nil
-        e._repositioningForLOS = false
-        e.wantsMeleeAttack = true
-        e.hasPlayerLOS = true
-        e:stop(dt)
-        e:faceToward(px, py)
-        return
-    end
+    -- Ranger attack identity is a non-homing shot; never commit to melee.
+    e._meleeEngaged = false
     e.wantsMeleeAttack = false
 
     if e._backingAway then

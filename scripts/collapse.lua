@@ -265,17 +265,18 @@ local function beginFall(col, row, state)
         end
     end
 
-    -- Enemies on falling cell: destroy (no void ghosts).
+    -- Enemies on falling cell: destroy physics immediately (no void ghosts / no +time).
     if state and state.actors then
         for i = #state.actors, 1, -1 do
             local actor = state.actors[i]
             if actor.label == "enemy" and not actor.dead and actor.collider then
                 local ec, er = worldToCell(actor.collider:getX(), actor.collider:getY())
                 if ec == col and er == row then
-                    if actor.die then
-                        actor:die()
+                    if actor.destroyNow then
+                        actor:destroyNow({ reward = false })
+                    else
+                        state:removeActor(actor)
                     end
-                    state:removeActor(actor)
                 end
             end
         end
@@ -361,7 +362,7 @@ function collapse.load(map, nests)
 end
 
 function collapse.update(dt, state)
-    if not state or state.extracted or state.sectorCleared then
+    if not state or state.extracted or state.sectorCleared or state.enemyTestMode then
         rumble = math.max(0, rumble - dt * 3)
         return
     end
@@ -527,6 +528,23 @@ function collapse.isFallenCell(col, row)
         return false
     end
     return cells[idx(col, row)].state == FALLEN
+end
+
+function collapse.isCrackingCell(col, row)
+    if not inBounds(col, row) then
+        return false
+    end
+    return cells[idx(col, row)].state == CRACKING
+end
+
+--- World-space floor reject for spawns (fallen or cracking = unsafe).
+function collapse.isUnsafeFloor(x, y)
+    local col, row = worldToCell(x, y)
+    if not inBounds(col, row) then
+        return true
+    end
+    local s = cells[idx(col, row)].state
+    return s == FALLEN or s == CRACKING
 end
 
 --- Read-only acceptance hook for map/collapse protection tests.
