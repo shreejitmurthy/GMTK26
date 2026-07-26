@@ -241,15 +241,16 @@ function selftest.run(playerActor, enemyActors)
     if byType.chaser then
         local c = byType.chaser
         allOk = check("chaser default fields",
-            nearlyEqual(c.speed, 58) and nearlyEqual(c.aggroRange, 140)
+            nearlyEqual(c.speed, 58) and nearlyEqual(c.aggroRange, 185)
+                and nearlyEqual(c.leashRange, 360)
                 and nearlyEqual(c.stopDistance, 32)
                 and nearlyEqual(c.stopDeadzone, 6)
                 and nearlyEqual(c.separationDistance, 28)
                 and nearlyEqual(c.separationSpeed, 24)
                 and c.attackStyle == "lunge"
                 and nearlyEqual(c.attackDamageSeconds, 4),
-            string.format("speed=%.0f aggro=%.0f stop=%.0f style=%s dmg=%s",
-                c.speed or -1, c.aggroRange or -1,
+            string.format("speed=%.0f aggro=%.0f leash=%.0f stop=%.0f style=%s dmg=%s",
+                c.speed or -1, c.aggroRange or -1, c.leashRange or -1,
                 c.stopDistance or -1, tostring(c.attackStyle),
                 tostring(c.attackDamageSeconds))) and allOk
     end
@@ -266,20 +267,23 @@ function selftest.run(playerActor, enemyActors)
     if byType.keeper then
         local k = byType.keeper
         allOk = check("keeper default fields",
-            nearlyEqual(k.speed, 48) and nearlyEqual(k.aggroRange, 160)
+            nearlyEqual(k.speed, 48) and nearlyEqual(k.aggroRange, 200)
+                and nearlyEqual(k.leashRange, 380)
                 and nearlyEqual(k.preferredDistance, 44) and nearlyEqual(k.band, 10)
                 and k.attackStyle == "slam"
                 and nearlyEqual(k.attackDamageSeconds, 8)
                 and nearlyEqual(k.attackRange, 58)
                 and k.preferredDistance + k.band <= k.attackRange + 0.01,
-            string.format("speed=%.0f pref=%.0f±%.0f range=%.0f style=%s",
-                k.speed or -1, k.preferredDistance or -1, k.band or -1,
+            string.format("speed=%.0f aggro=%.0f leash=%.0f pref=%.0f±%.0f range=%.0f style=%s",
+                k.speed or -1, k.aggroRange or -1, k.leashRange or -1,
+                k.preferredDistance or -1, k.band or -1,
                 k.attackRange or -1, tostring(k.attackStyle))) and allOk
     end
     if byType.ranger then
         local r = byType.ranger
         allOk = check("ranger default fields",
-            nearlyEqual(r.speed, 65) and nearlyEqual(r.aggroRange, 190)
+            nearlyEqual(r.speed, 65) and nearlyEqual(r.aggroRange, 220)
+                and nearlyEqual(r.leashRange, 400)
                 and nearlyEqual(r.safeDistance, 100)
                 and nearlyEqual(r.safeDeadzone, 8)
                 and r.attackStyle == "shot"

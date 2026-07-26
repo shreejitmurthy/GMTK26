@@ -331,11 +331,15 @@ local function buildSpawns(startId)
 
     add("player_start", 14, 20, 1, 1, {})
 
+    -- Openers clustered on district potions (a bit denser for contest).
     add("spawn_chaser_a", 3, 13, 1, 1, { type = "chaser", nest = "a" })
     add("spawn_fleer_a", 7, 19, 1, 1, { type = "fleer", nest = "a" })
+    add("spawn_keeper_a", 5, 15, 1, 1, { type = "keeper", nest = "a" })
     add("spawn_keeper_b", 18, 16, 1, 1, { type = "keeper", nest = "b" })
     add("spawn_chaser_b", 24, 19, 1, 1, { type = "chaser", nest = "b" })
+    add("spawn_fleer_b", 20, 20, 1, 1, { type = "fleer", nest = "b" })
     add("spawn_ranger_c", 22, 6, 1, 1, { type = "ranger", nest = "c" })
+    add("spawn_chaser_c", 26, 8, 1, 1, { type = "chaser", nest = "c" })
 
     return objects, id
 end

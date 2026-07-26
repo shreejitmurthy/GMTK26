@@ -13,7 +13,9 @@ enemy_types.defaults = {
         hurtH = 20,
         hurtOffsetY = -10,
         speed = 58,
-        aggroRange = 140,
+        aggroRange = 185,
+        --- Stay locked on after first contact until leash break / pack nest cleansed.
+        leashRange = 360,
         stopDistance = 32,
         stopDeadzone = 6,
         separationDistance = 28,
@@ -45,7 +47,8 @@ enemy_types.defaults = {
         hurtH = 22,
         hurtOffsetY = -8,
         speed = 48,
-        aggroRange = 160,
+        aggroRange = 200,
+        leashRange = 380,
         -- Hold inside slam reach (attackRange 58, slamRadius 40).
         preferredDistance = 44,
         band = 10,
@@ -63,7 +66,8 @@ enemy_types.defaults = {
         hurtH = 20,
         hurtOffsetY = -10,
         speed = 65,
-        aggroRange = 190,
+        aggroRange = 220,
+        leashRange = 400,
         safeDistance = 100,
         safeDeadzone = 8,
         meleeRange = 32,
@@ -82,6 +86,7 @@ local AI_FIELDS = {
     chaser = {
         "speed",
         "aggroRange",
+        "leashRange",
         "stopDistance",
         "stopDeadzone",
         "separationDistance",
@@ -94,6 +99,7 @@ local AI_FIELDS = {
     keeper = {
         "speed",
         "aggroRange",
+        "leashRange",
         "preferredDistance",
         "band",
         "meleeRange",
@@ -103,6 +109,7 @@ local AI_FIELDS = {
     ranger = {
         "speed",
         "aggroRange",
+        "leashRange",
         "safeDistance",
         "safeDeadzone",
         "meleeRange",
@@ -168,6 +175,7 @@ function enemy_types.apply(e, options)
     e._losGoalY = nil
     e._repositioningForLOS = false
     e._meleeEngaged = false
+    e._aggroed = false
     e.wantsMeleeAttack = false
     e.hasPlayerLOS = nil
 end
@@ -181,15 +189,38 @@ local function distToPlayer(e, player)
     return px, py, math.sqrt(dx * dx + dy * dy)
 end
 
+--- Persist chase after first contact until leash break (or pack nest release).
+local function isAggroed(e, dist)
+    if not dist then
+        e._aggroed = false
+        return false
+    end
+    local aggro = e.aggroRange or 160
+    local leash = e.leashRange or (aggro * 2.2)
+    if e._aggroed then
+        if dist > leash then
+            e._aggroed = false
+            return false
+        end
+        return true
+    end
+    if dist <= aggro then
+        e._aggroed = true
+        return true
+    end
+    return false
+end
+
 local function updateChaser(e, dt, player)
     local px, py, dist = distToPlayer(e, player)
     if not dist then
         e._holding = false
+        e._aggroed = false
         e.wantsMeleeAttack = false
         e:stop(dt)
         return
     end
-    if dist > e.aggroRange then
+    if not isAggroed(e, dist) then
         e._holding = false
         e.wantsMeleeAttack = false
         e:stop(dt)
@@ -237,11 +268,12 @@ end
 local function updateKeeper(e, dt, player)
     local px, py, dist = distToPlayer(e, player)
     if not dist then
+        e._aggroed = false
         e.wantsMeleeAttack = false
         e:stop(dt)
         return
     end
-    if dist > e.aggroRange then
+    if not isAggroed(e, dist) then
         e.wantsMeleeAttack = false
         e:stop(dt)
         return
@@ -259,13 +291,16 @@ end
 
 local function updateRanger(e, dt, player)
     local px, py, dist = distToPlayer(e, player)
-    if not dist or dist > e.aggroRange then
+    if not dist or not isAggroed(e, dist) then
         e._backingAway = false
         e._losGoalX, e._losGoalY = nil, nil
         e._repositioningForLOS = false
         e._meleeEngaged = false
         e.wantsMeleeAttack = false
         e.hasPlayerLOS = nil
+        if not dist then
+            e._aggroed = false
+        end
         e:stop(dt)
         return
     end

@@ -4,7 +4,7 @@
 local countdown = {}
 countdown.__index = countdown
 
-local DEFAULT_DURATION = 90
+local DEFAULT_DURATION = 120
 local DAMAGE_PULSE_DURATION = 0.4
 
 --- opts: { duration = seconds } — jam default ~60–120.

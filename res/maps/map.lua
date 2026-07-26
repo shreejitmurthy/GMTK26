@@ -10,7 +10,7 @@ return {
   tilewidth = 16,
   tileheight = 16,
   nextlayerid = 11,
-  nextobjectid = 33,
+  nextobjectid = 36,
   properties = {
     nestA = "Ash Market",
     nestB = "Ossuary",
@@ -834,12 +834,28 @@ return {
           height = 16,
           properties = {
             type = "keeper",
+            nest = "a"
+          },
+          type = "",
+          x = 80,
+          y = 240,
+          id = 30,
+          name = "spawn_keeper_a",
+          visible = true,
+          shape = "rectangle",
+          rotation = 0
+        },
+        {
+          width = 16,
+          height = 16,
+          properties = {
+            type = "keeper",
             nest = "b"
           },
           type = "",
           x = 288,
           y = 256,
-          id = 30,
+          id = 31,
           name = "spawn_keeper_b",
           visible = true,
           shape = "rectangle",
@@ -855,8 +871,24 @@ return {
           type = "",
           x = 384,
           y = 304,
-          id = 31,
+          id = 32,
           name = "spawn_chaser_b",
+          visible = true,
+          shape = "rectangle",
+          rotation = 0
+        },
+        {
+          width = 16,
+          height = 16,
+          properties = {
+            type = "fleer",
+            nest = "b"
+          },
+          type = "",
+          x = 320,
+          y = 320,
+          id = 33,
+          name = "spawn_fleer_b",
           visible = true,
           shape = "rectangle",
           rotation = 0
@@ -871,8 +903,24 @@ return {
           type = "",
           x = 352,
           y = 96,
-          id = 32,
+          id = 34,
           name = "spawn_ranger_c",
+          visible = true,
+          shape = "rectangle",
+          rotation = 0
+        },
+        {
+          width = 16,
+          height = 16,
+          properties = {
+            type = "chaser",
+            nest = "c"
+          },
+          type = "",
+          x = 416,
+          y = 128,
+          id = 35,
+          name = "spawn_chaser_c",
           visible = true,
           shape = "rectangle",
           rotation = 0

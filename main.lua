@@ -237,7 +237,7 @@ function state:onNestCleansed(nest)
     end
     self:pushFloat(label, fx, fy - 18, col[1], col[2], col[3], 1.1)
     atmosphere.notifyNestCleansed(nest)
-    encounter_director.onNestCleansed(nest)
+    encounter_director.onNestCleansed(nest, self)
     if nests.isWell(nest) then
         print(string.format(
             "[nest] Plague Well cleansed — sector clear (%.0f seals)",
@@ -581,10 +581,12 @@ function state:drawHud()
         local tw = timerFont:getWidth(text)
         local th = timerFont:getHeight()
         local cx = sw / 2
-        -- Italianno getHeight() is taller than the visible glyphs; stack with
-        -- measured cursors so labels / plate / hints never collide.
-        local timerY = 14
-        local stackY = timerY + th * 0.58
+        local timerY = 10
+        -- Clear the full Italianno line box so the fuse never cuts the digits.
+        local ascent = timerFont:getAscent() or (th * 0.75)
+        local descent = math.abs(timerFont:getDescent() or (th * 0.2))
+        local timerInkBottom = timerY + ascent + descent * 0.45
+        local fuseY = timerInkBottom + 10
 
         love.graphics.push()
         love.graphics.translate(cx, timerY)
@@ -598,7 +600,6 @@ function state:drawHud()
         local fuseW = 200
         local fuseH = 4
         local fuseX = cx - fuseW / 2
-        local fuseY = stackY
         local filled = fuseW * ratio
         love.graphics.setColor(0, 0, 0, 0.45)
         love.graphics.rectangle("fill", fuseX - 1, fuseY - 1, fuseW + 2, fuseH + 2)
@@ -615,7 +616,7 @@ function state:drawHud()
             love.graphics.rectangle("fill", tx, fuseY - 1, 1, fuseH + 2)
         end
 
-        stackY = fuseY + fuseH + 6
+        local stackY = fuseY + fuseH + 8
         local label = "Plague Tolerance"
         local lw = labelFont:getWidth(label)
         local labelH = labelFont:getHeight()
@@ -629,7 +630,7 @@ function state:drawHud()
             b,
             0.88 * a
         )
-        stackY = stackY + labelH * 0.72 + HUD_GAP
+        stackY = stackY + labelH + HUD_GAP
 
         if dmgPulse > 0 and dmgAmount > 0 then
             local floatText = string.format("-%.0fs", dmgAmount)
@@ -981,7 +982,7 @@ local function beginRun(opts)
         boundaryCount
     ))
 
-    state.countdown = countdown.new({ duration = 90 })
+    state.countdown = countdown.new({ duration = 120 })
     if enemyTest then
         -- Natural decay off; combat damage / sword kills still work.
         state.countdown:pause()
@@ -1055,7 +1056,7 @@ local function beginRun(opts)
     return playerActor, enemies
 end
 
---- Tear down actors/physics and rebuild a clean 90s run (no Windfield leaks).
+--- Tear down actors/physics and rebuild a clean 120s run (no Windfield leaks).
 function state:prepareRestart()
     print("[run] prepareRestart — safe teardown + rebuild")
     encounter_director.reset()

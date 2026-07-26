@@ -161,7 +161,7 @@ As plague tolerance fails, floor tiles literally fall away — unique pressure v
 ### Plague timer (health)
 
 - Module: `scripts/countdown.lua`, owned by gameplay as `state.countdown`.
-- **Default duration: 90 seconds** (jam feel; tune ~60–120).
+- **Default duration: 120 seconds** (2 minutes).
 - Display: large **top-center** clock (`M:SS`, tenths under 10s) in Italianno cursive + thin segmented **Plague Tolerance** fuse (width = `getRatio()`, same color family — not a heart HP bar).
 - Feedback: `:damage()` sets `damagePulse` (~0.4s) — digit/fuse flash + floating `-Xs`. Ratio < 0.15 → subtle screen-edge tint.
 - Urgency: warmer tint below 25% remaining; subtle pulse below 10%. During

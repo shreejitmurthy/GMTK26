@@ -12,22 +12,23 @@ local encounter_director = {}
 -- Tuning (all encounter cadence / fairness knobs live here)
 ---------------------------------------------------------------------------
 local TUNING = {
-    --- Living + pending global cap (Prompt D).
-    MAX_ACTIVE = 6,
+    --- Living + pending global cap. Slightly higher for nest contesting.
+    MAX_ACTIVE = 8,
     TYPE_CAPS = {
-        chaser = 3,
-        fleer = 2,
-        keeper = 2,
-        ranger = 1,
+        chaser = 4,
+        fleer = 3,
+        keeper = 3,
+        ranger = 2,
     },
-    --- Per uncleansed nest: seconds between pressure attempts.
-    PRESSURE_INTERVAL = 12.0,
+    --- Per uncleansed nest: seconds between pressure attempts (steady, not spam).
+    PRESSURE_INTERVAL = 11.0,
+    WELL_PRESSURE_INTERVAL = 6.5,
     --- Stagger so three nests do not fire on the same frame at t=0.
-    PRESSURE_STAGGER = 1.5,
+    PRESSURE_STAGGER = 1.8,
     --- First dynamic spawn ≥ 8s after run start.
     PRESSURE_START_DELAY = 8.0,
     --- Retry soon when at cap or no safe point.
-    PRESSURE_RETRY = 1.6,
+    PRESSURE_RETRY = 2.0,
     TELEGRAPH_SECONDS = 0.6,
     MIN_PLAYER_DIST = 120,
     MIN_ENEMY_DIST = 36,
@@ -40,6 +41,12 @@ local TUNING = {
     NEST_RING_MAX = 72,
     RING_ATTEMPTS = 16,
     RANDOM_ATTEMPTS = 24,
+    --- Player-adjacent pressure when cleansing / near an uncleansed site.
+    PLAYER_RING_MIN = 128,
+    PLAYER_RING_MAX = 200,
+    PLAYER_RING_ATTEMPTS = 22,
+    HUNT_WAVE_BURSTS = 2,
+    WELL_FINALE_BURSTS = 3,
     COMPOSITION = {
         { type = "chaser", weight = 0.45 },
         { type = "fleer", weight = 0.25 },
@@ -290,7 +297,60 @@ local function tryRandomAway(state)
     return nil, nil
 end
 
+local function getNest(state, nestId)
+    for _, nest in ipairs(state.nests or {}) do
+        if nest.id == nestId then
+            return nest
+        end
+    end
+    return nil
+end
+
+--- Bias toward the player when they are fighting / cleansing that site.
+local function shouldBiasPlayer(state, nestId)
+    local nest = getNest(state, nestId)
+    local playerActor = state:getActor("player")
+    if not nest or not playerActor or not playerActor.pos then
+        return false
+    end
+    if nest.channeling then
+        return true
+    end
+    local d = dist(playerActor.pos.x, playerActor.pos.y, nest.x, nest.y)
+    return d <= (nest.radius or 36) + 100
+end
+
+local function tryNearPlayer(state, allowCamera)
+    local playerActor = state:getActor("player")
+    if not playerActor or not playerActor.pos then
+        return nil, nil
+    end
+    local px, py = playerActor.pos.x, playerActor.pos.y
+    for _ = 1, TUNING.PLAYER_RING_ATTEMPTS do
+        local ang = love.math.random() * math.pi * 2
+        local rad = TUNING.PLAYER_RING_MIN
+            + love.math.random() * (TUNING.PLAYER_RING_MAX - TUNING.PLAYER_RING_MIN)
+        local x = px + math.cos(ang) * rad
+        local y = py + math.sin(ang) * rad
+        if encounter_director.isSpawnSafe(x, y, state, { allowCamera = allowCamera }) then
+            return x, y
+        end
+    end
+    return nil, nil
+end
+
 local function findSpawnPoint(nestId, state)
+    if shouldBiasPlayer(state, nestId) then
+        -- Prefer contested floor near the player (still outside MIN_PLAYER_DIST).
+        local x, y = tryNearPlayer(state, true)
+        if x then
+            return x, y
+        end
+        x, y = tryNearPlayer(state, false)
+        if x then
+            return x, y
+        end
+    end
     local x, y = tryAuthoredPoints(nestId, state)
     if x then
         return x, y
@@ -300,6 +360,43 @@ local function findSpawnPoint(nestId, state)
         return x, y
     end
     return tryRandomAway(state)
+end
+
+local function uncleansedCount(state)
+    local n = 0
+    for _, nest in ipairs(state.nests or {}) do
+        if not nest.cleansed then
+            n = n + 1
+        end
+    end
+    return n
+end
+
+--- Tighten cadence while many sites remain / plague timer is low.
+local function pressureIntervalFor(state, isWell)
+    local base = isWell and TUNING.WELL_PRESSURE_INTERVAL or TUNING.PRESSURE_INTERVAL
+    local sites = uncleansedCount(state)
+    local ratio = 1
+    if state.countdown and state.countdown.getRatio then
+        ratio = state.countdown:getRatio()
+    end
+    -- Mild urgency only — keep a fair cadence, not a spawn flood.
+    local urgency = math.min(1, (sites / 4) * 0.4 + (1 - ratio) * 0.35)
+    return base * (1 - 0.28 * urgency)
+end
+
+local function dropPackAggro(state, nestId)
+    if not state or not state.actors or not nestId then
+        return
+    end
+    for _, actor in ipairs(state.actors) do
+        if actor.label == "enemy"
+            and not actor.dead
+            and actor.nest == nestId
+        then
+            actor._aggroed = false
+        end
+    end
 end
 
 local function beginTelegraph(nestId, state)
@@ -422,11 +519,12 @@ function encounter_director.reset()
     end
 end
 
-function encounter_director.onNestCleansed(nest)
+function encounter_director.onNestCleansed(nest, state)
     if not nest or not nest.id then
         return
     end
     pressure[nest.id] = nil
+    dropPackAggro(state, nest.id)
     for i = #pending, 1, -1 do
         if pending[i].nestId == nest.id then
             print(string.format(
@@ -437,12 +535,55 @@ function encounter_director.onNestCleansed(nest)
             table.remove(pending, i)
         end
     end
+
+    -- District cleanse hunt wave: remaining sites spike so the map stays hot.
+    if nestsMod.isWell(nest) or not state then
+        return
+    end
+    local bursts = 0
+    for _, other in ipairs(state.nests or {}) do
+        if not other.cleansed and other.id ~= nest.id then
+            if nestsMod.isWell(other) and other.locked then
+                -- Well still sealed — skip until unlock.
+            else
+                pressure[other.id] = math.min(pressure[other.id] or 99, 0.12 + bursts * 0.18)
+                if bursts < TUNING.HUNT_WAVE_BURSTS
+                    and countActive(state) < TUNING.MAX_ACTIVE
+                    and beginTelegraph(other.id, state)
+                then
+                    bursts = bursts + 1
+                end
+            end
+        end
+    end
+    if bursts > 0 then
+        print(string.format(
+            "[encounter] hunt wave after nest_%s — %d telegraphs",
+            nest.id,
+            bursts
+        ))
+    end
 end
 
---- Finale: unlocked well pulses faster pressure around the fountain.
+--- Finale: unlocked well pulses + immediate fountain-approach burst.
 function encounter_director.onWellUnlocked(state)
-    pressure.well = 2.5
-    print("[encounter] well finale pressure armed")
+    pressure.well = 0.2
+    local bursts = 0
+    if state then
+        while bursts < TUNING.WELL_FINALE_BURSTS
+            and countActive(state) < TUNING.MAX_ACTIVE
+        do
+            if beginTelegraph("well", state) then
+                bursts = bursts + 1
+            else
+                break
+            end
+        end
+    end
+    print(string.format(
+        "[encounter] well finale pressure armed (%d burst telegraphs)",
+        bursts
+    ))
 end
 
 function encounter_director.update(state, dt)
@@ -488,7 +629,7 @@ function encounter_director.update(state, dt)
         else
             local t = pressure[nest.id]
             if t == nil then
-                t = isWell and 2.5 or TUNING.PRESSURE_INTERVAL
+                t = isWell and 2.0 or TUNING.PRESSURE_INTERVAL
                 pressure[nest.id] = t
             end
             t = t - dt
@@ -498,9 +639,9 @@ function encounter_director.update(state, dt)
                 elseif countActive(state) >= TUNING.MAX_ACTIVE then
                     pressure[nest.id] = TUNING.PRESSURE_RETRY
                 elseif beginTelegraph(nest.id, state) then
-                    local interval = isWell and 7.0 or TUNING.PRESSURE_INTERVAL
+                    local interval = pressureIntervalFor(state, isWell)
                     pressure[nest.id] = interval
-                        + (love.math.random() * 2.0 - 0.5)
+                        + (love.math.random() * 1.6 - 0.4)
                     spawnedThisFrame = true
                 else
                     pressure[nest.id] = TUNING.PRESSURE_RETRY
@@ -638,7 +779,7 @@ function encounter_director.runSelftest(state)
                 if nest.id == "a" and not nest.cleansed then
                     nest.cleansed = true
                     nest.progress = 1
-                    encounter_director.onNestCleansed(nest)
+                    encounter_director.onNestCleansed(nest, state)
                     state._nestACleansed = true
                 end
             end
